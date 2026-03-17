@@ -143,13 +143,14 @@ async function loadProfile() {
             state.tags.roles = profiles[0].target_roles || [];
             state.tags.locations = profiles[0].target_locations || [];
             state.tags.skills = profiles[0].skills || [];
-            if (state.profile.has_profile_doc) {
-                setProfileMode('paste');
-            } else {
-                setProfileMode('manual');
-            }
-            await loadSwipeStack();
-            loadStats();
+            try {
+                if (state.profile.has_profile_doc) {
+                    setProfileMode('paste');
+                } else {
+                    setProfileMode('manual');
+                }
+            } catch(e) { /* profile view not yet active */ }
+            showView('dugout');
         } else {
             document.getElementById('no-profile-state').style.display = 'block';
             document.getElementById('action-bar').style.display = 'none';
@@ -168,15 +169,15 @@ function setProfileMode(mode) {
     const btnManual = document.getElementById('btn-mode-manual');
 
     if (mode === 'paste') {
-        pasteMode.style.display = 'block';
-        manualMode.style.display = 'none';
-        btnPaste.className = 'btn btn-primary';
-        btnManual.className = 'btn btn-secondary';
+        if (pasteMode) pasteMode.style.display = 'block';
+        if (manualMode) manualMode.style.display = 'none';
+        if (btnPaste) btnPaste.className = 'btn btn-primary';
+        if (btnManual) btnManual.className = 'btn btn-secondary';
     } else {
-        pasteMode.style.display = 'none';
-        manualMode.style.display = 'block';
-        btnPaste.className = 'btn btn-secondary';
-        btnManual.className = 'btn btn-primary';
+        if (pasteMode) pasteMode.style.display = 'none';
+        if (manualMode) manualMode.style.display = 'block';
+        if (btnPaste) btnPaste.className = 'btn btn-secondary';
+        if (btnManual) btnManual.className = 'btn btn-primary';
         if (state.profile) populateProfileForm(state.profile);
     }
 }
@@ -297,13 +298,13 @@ function populateProfileForm(p) {
 }
 
 function setupFormHandlers() {
-    document.getElementById('profile-form').addEventListener('submit', async (e) => {
+    document.getElementById('profile-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         await saveProfile();
     });
 
-    document.getElementById('btn-search-jobs').addEventListener('click', searchJobs);
-    document.getElementById('btn-search-more').addEventListener('click', searchJobs);
+    document.getElementById('btn-search-jobs')?.addEventListener('click', searchJobs);
+    document.getElementById('btn-search-more')?.addEventListener('click', searchJobs);
     document.getElementById('btn-rescore')?.addEventListener('click', rescoreJobs);
 }
 
