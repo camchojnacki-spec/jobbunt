@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(pip --version)",
+      "Bash(pip3 --version)",
+      "Bash(where node:*)",
+      "Bash('/c/Program Files/nodejs/node.exe' --version)",
+      "Read(//c/Program Files/**)",
+      "Bash(where node.exe)",
+      "Read(//c//**)",
+      "Read(//c/Users/Cameron/Jobbunt/$APPDATA/**)",
+      "Bash(PATH=\"$PATH:/c/Program Files/nodejs\" node --version)",
+      "Read(//c/Users/Cameron/Jobbunt/$LOCALAPPDATA/**)",
+      "Bash(pip install:*)",
+      "Bash(python -c \"from backend.app import app; from backend.database import init_db; init_db\\(\\); print\\(''App loads OK''\\)\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(python -c \"from backend.database import init_db; init_db\\(\\); print\\(''DB rebuilt''\\)\")",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(python -c \"from backend.routes.api import router; from backend.services.agent import start_application, process_application, submit_application; from backend.services.enrichment import verify_job_active; print\\(''All imports OK''\\)\")",
+      "Bash(python -c \":*)",
+      "Bash(python run.py)",
+      "Bash(timeout 3)",
+      "Bash(curl -s http://localhost:8000/api/profiles/1/stats)",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(curl -s http://localhost:8000/api/profiles)",
+      "Bash(curl -s -X POST http://localhost:8000/api/profiles/1/analyze)",
+      "Bash(curl -s http://localhost:8000/api/profiles/1/jobs?status=pending)",
+      "Bash(curl -s http://localhost:8000/api/settings/provider)",
+      "Bash(curl -s http://localhost:8000/api/ai-provider)",
+      "Bash(curl -s http://localhost:8000/api/profiles/1/apply-readiness)",
+      "Bash(pip show:*)"
+    ]
+  }
+}
