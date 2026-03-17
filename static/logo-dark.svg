@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 36" width="120" height="28">
+  <!-- j letter -->
+  <text x="0" y="26" font-family="'Outfit',sans-serif" font-size="30" font-weight="300" fill="#E0E6ED" letter-spacing="-1">j</text>
+  <!-- Diamond O -->
+  <g transform="translate(13,4)">
+    <path d="M11 1 L21 11 L11 21 L1 11 Z" fill="#1D2D5C" stroke="#4A90D9" stroke-width="0.6"/>
+    <circle cx="11" cy="1" r="1.8" fill="#4A90D9"/>
+    <circle cx="21" cy="11" r="1.8" fill="#4A90D9" opacity="0.6"/>
+    <circle cx="11" cy="21" r="1.8" fill="#B8211A"/>
+    <circle cx="1" cy="11" r="1.8" fill="#4A90D9" opacity="0.6"/>
+  </g>
+  <!-- bbunt text -->
+  <text x="35" y="26" font-family="'Outfit',sans-serif" font-size="30" font-weight="300" fill="#E0E6ED" letter-spacing="-1">bbunt</text>
+</svg>

@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jobbunt</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260317b">
+    <script src="https://accounts.google.com/gsi/client" async></script>
+</head>
+<body>
+    <!-- Login Screen Overlay -->
+    <div class="login-overlay" id="login-overlay" style="display:none">
+        <div class="login-container">
+            <img src="/static/logo-dark.svg" alt="Jobbunt" class="login-logo">
+            <p class="login-tagline">Tinder-style job search & auto-apply</p>
+            <div id="google-signin-btn" class="google-signin-wrapper"></div>
+            <p class="login-skip" id="login-skip" style="display:none">
+                <a href="#" onclick="skipLogin();return false;">Continue without signing in</a>
+            </p>
+        </div>
+    </div>
+    <div class="app" id="app">
+        <!-- Navigation -->
+        <nav class="nav">
+            <div class="nav-brand">
+                <svg width="110" height="24" viewBox="0 0 150 32">
+                    <text x="0" y="24" font-family="'Outfit',sans-serif" font-size="28" font-weight="300" fill="#E0E6ED" letter-spacing="-1.2">j</text>
+                    <g transform="translate(6,5)">
+                        <path d="M10 0 L18 9.5 L10 19 L2 9.5Z" fill="#1D2D5C" stroke="#4A90D9" stroke-width="0.5"/>
+                        <circle cx="10" cy="0" r="1.6" fill="#4A90D9"/>
+                        <circle cx="18" cy="9.5" r="1.6" fill="#4A90D9" opacity="0.6"/>
+                        <circle cx="10" cy="19" r="1.6" fill="#E8291C"/>
+                        <circle cx="2" cy="9.5" r="1.6" fill="#4A90D9" opacity="0.6"/>
+                    </g>
+                    <text x="26" y="24" font-family="'Outfit',sans-serif" font-size="28" font-weight="300" fill="#E0E6ED" letter-spacing="-1.2">bbunt</text>
+                </svg>
+            </div>
+            <div class="nav-links" id="nav-links">
+                <a class="nav-link active" data-view="dugout" onclick="showView('dugout')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 12h3v8h6v-5h2v5h6v-8h3L12 3z"/></svg>
+                    Dugout
+                </a>
+                <a class="nav-link" data-view="hunt" onclick="showView('hunt')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+                    Scouting
+                </a>
+                <a class="nav-link" data-view="pipeline" onclick="showView('pipeline')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    Prospects
+                </a>
+                <a class="nav-link" data-view="intel" onclick="showView('intel')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    Bullpen
+                </a>
+                <a class="nav-link" data-view="profile" onclick="showView('profile')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    Profile
+                </a>
+            </div>
+            <div class="nav-right">
+                <div class="activity-indicator" id="activity-indicator" style="display:none">
+                    <svg class="activity-spinner" width="18" height="18" viewBox="0 0 120 120" fill="none">
+                        <style>@keyframes hi-spin{to{transform:rotate(360deg)}}</style>
+                        <g style="animation:hi-spin 1.8s linear infinite;transform-origin:60px 60px">
+                            <circle cx="60" cy="28" r="5" fill="none" stroke="#4A90D9" stroke-width="1.5" opacity="0.6"/>
+                        </g>
+                    </svg>
+                    <span class="activity-text" id="activity-text">Working...</span>
+                </div>
+                <div class="profile-menu" id="profile-menu">
+                    <button class="profile-avatar" id="profile-avatar" onclick="toggleProfileDropdown()" title="Profile">
+                        <span id="avatar-initials">?</span>
+                    </button>
+                    <div class="profile-dropdown" id="profile-dropdown">
+                        <div class="dropdown-header" id="dropdown-profile-name">No Profile</div>
+                        <div class="dropdown-profiles" id="dropdown-profiles"></div>
+                        <div class="dropdown-divider"></div>
+                        <button class="dropdown-item" onclick="showView('profile');switchProfileTab('profile');closeProfileDropdown()">Edit Profile</button>
+                        <button class="dropdown-item" onclick="showView('profile');switchProfileTab('settings');closeProfileDropdown()">Settings</button>
+                        <button class="dropdown-item dropdown-signout" id="dropdown-signout" onclick="logout();closeProfileDropdown()" style="display:none">Sign Out</button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main page">
+            <!-- ═══ Dugout View (Home/Dashboard) ═══ -->
+            <div class="view active" id="view-dugout" data-view="dugout">
+                <div class="dugout-container">
+                    <!-- Hero Section -->
+                    <div class="dugout-hero">
+                        <div class="dugout-hero-glow"></div>
+                        <!-- Stadium lights -->
+                        <div class="dugout-hero-lights">
+                            <div class="stadium-light stadium-light-1"></div>
+                            <div class="stadium-light stadium-light-2"></div>
+                            <div class="stadium-light stadium-light-3"></div>
+                        </div>
+                        <!-- Foul line SVG -->
+                        <svg class="dugout-hero-foulline" viewBox="0 0 800 80" fill="none" preserveAspectRatio="none">
+                            <line x1="400" y1="80" x2="0" y2="0" stroke="rgba(74,144,217,0.06)" stroke-width="1"/>
+                            <line x1="400" y1="80" x2="800" y2="0" stroke="rgba(74,144,217,0.06)" stroke-width="1"/>
+                        </svg>
+                        <!-- Baseball stitching -->
+                        <svg class="dugout-hero-stitch" viewBox="0 0 200 20" fill="none">
+                            <path d="M0 10 Q10 2, 20 10 Q30 18, 40 10 Q50 2, 60 10 Q70 18, 80 10 Q90 2, 100 10 Q110 18, 120 10 Q130 2, 140 10 Q150 18, 160 10 Q170 2, 180 10 Q190 18, 200 10" stroke="var(--jb-red)" stroke-width="0.8" opacity="0.15" fill="none"/>
+                        </svg>
+                        <!-- Jobbunt logo -->
+                        <div class="dugout-hero-logo-wrap">
+                            <svg class="dugout-hero-diamond" width="40" height="40" viewBox="0 0 40 40" fill="none">
+                                <path d="M20 2 L36 18 L20 34 L4 18Z" fill="var(--jb-navy)" stroke="var(--jb-bright)" stroke-width="0.8" opacity="0.18"/>
+                                <path d="M20 22 L28 18 L20 14 L12 18Z" fill="var(--jb-red)" opacity="0.12"/>
+                            </svg>
+                            <div class="dugout-hero-logo" style="font-family:'Outfit',sans-serif;font-size:48px;font-weight:300;letter-spacing:-2px;color:var(--jb-text-1);display:inline-flex;align-items:center;gap:0">
+                                <span>j</span>
+                                <svg width="28" height="30" viewBox="0 0 28 27" fill="none" style="margin:0 -1px;position:relative;top:2px">
+                                    <path d="M14 0 L26 13.5 L14 27 L2 13.5Z" fill="var(--jb-navy)" stroke="var(--jb-bright)" stroke-width="0.7"/>
+                                    <circle cx="14" cy="0" r="2.2" fill="var(--jb-bright)"/>
+                                    <circle cx="26" cy="13.5" r="2.2" fill="var(--jb-bright)" opacity="0.6"/>
+                                    <circle cx="14" cy="27" r="2.2" fill="var(--jb-red)"/>
+                                    <circle cx="2" cy="13.5" r="2.2" fill="var(--jb-bright)" opacity="0.6"/>
+                                    <line x1="14" y1="27" x2="26" y2="13.5" stroke="var(--jb-bright)" stroke-width="0.35" opacity="0.3"/>
+                                </svg>
+                                <span>bbunt</span>
+                            </div>
+                        </div>
+                        <h1 class="dugout-hero-title">Make <span class="dugout-hero-accent">contact.</span></h1>
+                        <p class="dugout-hero-subtitle">Track every at-bat. Get on base.</p>
+                    </div>
+
+                    <!-- Season Stats Row -->
+                    <div class="dugout-season-stats" id="dugout-season-stats">
+                        <div class="season-stat">
+                            <div class="season-stat-value" id="stat-total-apps">0</div>
+                            <div class="season-stat-label">AT BATS</div>
+                        </div>
+                        <div class="season-stat">
+                            <div class="season-stat-value" id="stat-callbacks">0</div>
+                            <div class="season-stat-label">HITS</div>
+                        </div>
+                        <div class="season-stat">
+                            <div class="season-stat-value" id="stat-avg">.000</div>
+                            <div class="season-stat-label">AVG</div>
+                        </div>
+                        <div class="season-stat">
+                            <div class="season-stat-value" id="stat-shortlisted">0</div>
+                            <div class="season-stat-label">ON DECK</div>
+                        </div>
+                        <div class="season-stat">
+                            <div class="season-stat-value" id="stat-interviews">0</div>
+                            <div class="season-stat-label">ON BASE</div>
+                        </div>
+                    </div>
+
+                    <!-- Scouting Report + Reporter Corner Grid -->
+                    <div class="dugout-grid">
+                        <!-- Scouting Report -->
+                        <div class="dugout-card dugout-scouting-report" id="dugout-scouting-report">
+                            <div class="dugout-card-label">SCOUTING REPORT</div>
+                            <div class="dugout-card-title">Pre-game Checklist</div>
+                            <div class="scouting-report-progress">
+                                <div class="scouting-report-progress-bar" id="scouting-progress-bar" style="width:0%"></div>
+                            </div>
+                            <div class="scouting-report-pct" id="scouting-progress-pct">0% complete</div>
+                            <div class="scouting-checklist" id="scouting-checklist">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+
+                        <!-- Reporter Corner -->
+                        <div class="dugout-card dugout-reporter-corner" id="dugout-reporter-corner">
+                            <div class="dugout-card-label">REPORTER CORNER</div>
+                            <div class="dugout-card-title">Pre-game Interview</div>
+                            <div class="reporter-question" id="reporter-question"></div>
+                            <textarea class="reporter-textarea" id="reporter-textarea" placeholder="Your answer..." rows="4"></textarea>
+                            <div class="reporter-actions">
+                                <button class="reporter-save-btn" id="reporter-save-btn" onclick="saveReporterAnswer()">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    Save Answer
+                                </button>
+                                <span class="reporter-saved-msg" id="reporter-saved-msg"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Home Plate Divider -->
+                    <div class="dugout-divider">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 2 L22 12 L12 22 L2 12 Z" stroke="var(--jb-border-hover)" stroke-width="1" fill="none"/>
+                            <path d="M12 6 L18 12 L12 18 L6 12 Z" fill="var(--jb-bg-tertiary)" stroke="var(--jb-border)" stroke-width="0.5"/>
+                        </svg>
+                    </div>
+
+                    <!-- Baseball Card -->
+                    <div class="baseball-card" id="baseball-card">
+                        <div class="card-front" id="card-front"></div>
+                        <div class="card-back" id="card-back">
+                            <div class="stats-bar" id="stats-bar"></div>
+                            <div class="baseball-card-blurb" id="baseball-card-blurb" style="display:none"></div>
+                        </div>
+                    </div>
+
+                    <!-- Readiness Score -->
+                    <div class="dugout-readiness" id="dugout-readiness"></div>
+
+                    <!-- Quick Actions (restyled) -->
+                    <div class="dugout-actions">
+                        <button class="dugout-action-card" onclick="showView('hunt'); searchJobs()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+                            <div class="dugout-action-label">Scout Jobs</div>
+                            <div class="dugout-action-hint">Search &amp; discover</div>
+                        </button>
+                        <button class="dugout-action-card" onclick="showView('hunt')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a4 4 0 018 0v2"/></svg>
+                            <div class="dugout-action-label">Browse Jobs</div>
+                            <div class="dugout-action-hint">Review your feed</div>
+                        </button>
+                        <button class="dugout-action-card" onclick="showView('pipeline')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                            <div class="dugout-action-label">Prospects</div>
+                            <div class="dugout-action-hint">Track your pipeline</div>
+                        </button>
+                        <button class="dugout-action-card" onclick="showView('intel')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                            <div class="dugout-action-label">Bullpen</div>
+                            <div class="dugout-action-hint">AI tools &amp; analysis</div>
+                        </button>
+                    </div>
+
+                    <!-- Activity Charts -->
+                    <div class="dugout-chart-section" id="dugout-chart-section" style="display:none">
+                        <h3 class="dugout-section-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15h18"/><path d="M8 15V9"/><path d="M12 15V7"/><path d="M16 15v-3"/></svg>
+                            Search Activity
+                        </h3>
+                        <div class="dugout-chart-grid">
+                            <div class="dugout-chart-card" id="dugout-source-chart">
+                                <div class="dugout-chart-title">Jobs by Source</div>
+                                <div class="dugout-chart-bars" id="source-chart-bars"></div>
+                            </div>
+                            <div class="dugout-chart-card" id="dugout-status-chart">
+                                <div class="dugout-chart-title">Pipeline Status</div>
+                                <div class="dugout-chart-bars" id="status-chart-bars"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity Feed -->
+                    <div class="dugout-activity dugout-activity-lattice">
+                        <h3 class="dugout-section-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            Recent Activity
+                        </h3>
+                        <div class="dugout-activity-list" id="dugout-activity-list">
+                            <div class="dugout-activity-empty">No recent activity. Start scouting to fill your scorecard.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ Hunt View (Browse/Search Jobs) ═══ -->
+            <div class="view" id="view-hunt" data-view="hunt">
+                <div class="browse-container">
+                    <!-- Browse toolbar -->
+                    <div class="browse-toolbar" id="browse-toolbar">
+                        <div class="browse-toolbar-left">
+                            <button class="btn btn-primary btn-sm btn-search-trigger" onclick="searchJobs()" id="btn-search-more">
+                                🔍 Search Jobs
+                            </button>
+                            <button class="btn btn-secondary btn-sm" id="btn-rescore" onclick="rescoreJobs()">
+                                ♻ Rescore
+                            </button>
+                        </div>
+                        <div class="browse-toolbar-right">
+                            <div class="view-toggle" id="view-toggle">
+                                <button class="view-toggle-btn active" data-browse-mode="list" onclick="switchBrowseMode('list')" title="List View">☰</button>
+                                <button class="view-toggle-btn" data-browse-mode="grid" onclick="switchBrowseMode('grid')" title="Grid View">▦</button>
+                                <button class="view-toggle-btn" data-browse-mode="card" onclick="switchBrowseMode('card')" title="Card View">▢</button>
+                            </div>
+                            <span class="browse-count" id="browse-count"></span>
+                        </div>
+                    </div>
+
+                    <!-- Filter/Sort bar -->
+                    <div class="job-filter-bar" id="job-filter-bar" style="display:none"></div>
+
+                    <!-- Job list view -->
+                    <div class="job-list-view" id="job-list-view">
+                        <div class="job-list" id="job-list"></div>
+                    </div>
+
+                    <!-- Job grid view -->
+                    <div class="job-grid-view" id="job-grid-view" style="display:none">
+                        <div class="job-grid" id="job-grid"></div>
+                    </div>
+
+                    <!-- Pagination (shared between list/grid) -->
+                    <div class="job-pagination" id="job-pagination" style="display:none"></div>
+
+                    <!-- Single card detail view (old swipe style) -->
+                    <div class="job-feed" id="job-feed" style="display:none"></div>
+
+                    <!-- Action bar fixed at bottom -->
+                    <div class="action-bar" id="action-bar" style="display:none">
+                        <button class="action-btn pass" id="btn-pass" title="Pass — not interested (← or A)">
+                            <span class="action-icon">✕</span>
+                            <span class="action-label">Pass</span>
+                        </button>
+                        <button class="action-btn shortlist" id="btn-shortlist" title="Shortlist — save for later (↓ or S)">
+                            <span class="action-icon">⭐</span>
+                            <span class="action-label">Shortlist</span>
+                        </button>
+                        <button class="action-btn skip" id="btn-skip" title="Skip — come back to this (Space)">
+                            <span class="action-icon">→</span>
+                            <span class="action-label">Skip</span>
+                        </button>
+                        <button class="action-btn apply" id="btn-like" title="Like — apply to this job (→ or D)">
+                            <span class="action-icon">✓</span>
+                            <span class="action-label">Apply</span>
+                        </button>
+                    </div>
+
+                    <div class="empty-state" id="empty-state" style="display:none">
+                        <div class="empty-state-art">
+                            <svg class="signal-diamond" width="48" height="48" viewBox="0 0 48 48" fill="none">
+                                <style>
+                                    @keyframes diamond-pulse{0%,100%{opacity:.25;transform:scale(1)}50%{opacity:.6;transform:scale(1.08)}}
+                                    .signal-diamond .ring{animation:diamond-pulse 2.4s ease-in-out infinite}
+                                    .signal-diamond .ring:nth-child(2){animation-delay:.4s}
+                                    .signal-diamond .ring:nth-child(3){animation-delay:.8s}
+                                </style>
+                                <polygon class="ring" points="24,4 44,24 24,44 4,24" fill="none" stroke="#a01c1c" stroke-width="1" opacity="0.15"/>
+                                <polygon class="ring" points="24,10 38,24 24,38 10,24" fill="none" stroke="#a01c1c" stroke-width="1" opacity="0.25"/>
+                                <polygon class="ring" points="24,16 32,24 24,32 16,24" fill="#a01c1c" opacity="0.35"/>
+                            </svg>
+                        </div>
+                        <h2 style="font-family:'Outfit',sans-serif;font-weight:600;letter-spacing:0.5px">Ready to scout</h2>
+                        <p>Search for jobs to find your next opportunity</p>
+                        <div class="btn-group">
+                            <button class="cta-btn btn-search-trigger" id="btn-search-empty" onclick="searchJobs()">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="margin-right:6px;vertical-align:-2px">
+                                    <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5"/>
+                                    <line x1="11" y1="11" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                </svg>
+                                Search for Jobs
+                            </button>
+                            <button class="btn btn-secondary" onclick="showView('profile')">Edit Profile</button>
+                        </div>
+                    </div>
+
+                    <div class="empty-state" id="no-profile-state" style="display:none">
+                        <div class="empty-state-art">
+                            <svg width="160" height="120" viewBox="0 0 160 120" fill="none">
+                                <g transform="translate(50, 15)">
+                                    <line x1="0" y1="0" x2="0" y2="90" stroke="#E8E6E1" stroke-width="1" stroke-linecap="round" opacity="0.12"/>
+                                    <path d="M0 0 L60 18 L0 36 Z" fill="#E8291C" opacity="0.12" stroke="#E8291C" stroke-width="0.5"/>
+                                    <text x="18" y="22" font-family="'Outfit',sans-serif" font-size="9" font-weight="600" fill="#4A90D9" opacity="0.4">JB</text>
+                                </g>
+                            </svg>
+                        </div>
+                        <h2>Welcome to Jobbunt</h2>
+                        <p>Set up your profile to start browsing jobs</p>
+                        <button class="btn btn-primary" onclick="showView('profile')">Create Profile</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ Pipeline View (Shortlist + Applications) ═══ -->
+            <div class="view" id="view-pipeline" data-view="pipeline">
+                <div class="pipeline-container">
+                    <div class="pipeline-header">
+                        <h2 class="view-title">Prospects</h2>
+                        <p class="view-subtitle">Track your job search funnel</p>
+                    </div>
+
+                    <!-- Funnel summary -->
+                    <div class="pipeline-funnel" id="pipeline-funnel"></div>
+
+                    <!-- Sub-tabs -->
+                    <div class="pipeline-tabs">
+                        <button class="pipeline-tab active" onclick="switchPipelineTab('shortlist')">⭐ Shortlist</button>
+                        <button class="pipeline-tab" onclick="switchPipelineTab('applications')">📨 Applications</button>
+                    </div>
+
+                    <!-- Shortlist panel -->
+                    <div class="pipeline-panel active" id="pipeline-shortlist">
+                        <div id="shortlist-content">
+                            <div class="empty-state">
+                                <div class="empty-state-art">
+                                    <svg width="200" height="160" viewBox="0 0 200 160" fill="none">
+                                        <rect x="40" y="100" width="120" height="8" rx="4" fill="#E8E6E1" opacity="0.06"/>
+                                        <rect x="48" y="100" width="3" height="24" rx="1" fill="#E8E6E1" opacity="0.04"/>
+                                        <rect x="149" y="100" width="3" height="24" rx="1" fill="#E8E6E1" opacity="0.04"/>
+                                        <circle cx="70" cy="80" r="14" fill="none" stroke="#E8E6E1" stroke-width="0.6" opacity="0.08" stroke-dasharray="3 3"/>
+                                        <circle cx="100" cy="80" r="14" fill="none" stroke="#E8E6E1" stroke-width="0.6" opacity="0.08" stroke-dasharray="3 3"/>
+                                        <circle cx="130" cy="80" r="14" fill="none" stroke="#E8E6E1" stroke-width="0.6" opacity="0.08" stroke-dasharray="3 3"/>
+                                        <path d="M96 74 Q92 68 88 72 Q84 76 90 82 Q94 86 100 84 Q106 82 108 76 Q110 70 104 68 Q98 66 96 74Z" fill="#E8291C" opacity="0.15" stroke="#E8291C" stroke-width="0.5"/>
+                                    </svg>
+                                </div>
+                                <h2>No shortlisted jobs</h2>
+                                <p>Use the ⭐ button while browsing to add jobs to your shortlist</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Applications panel -->
+                    <div class="pipeline-panel" id="pipeline-applications">
+                        <div class="diamond-pipeline" id="diamond-pipeline"></div>
+                        <div id="applications-list">
+                            <div class="empty-state">
+                                <div class="empty-state-art">
+                                    <svg width="200" height="160" viewBox="0 0 200 160" fill="none">
+                                        <rect x="60" y="40" width="80" height="6" rx="3" fill="#E8E6E1" opacity="0.06"/>
+                                        <rect x="60" y="110" width="80" height="6" rx="3" fill="#E8E6E1" opacity="0.06"/>
+                                        <rect x="62" y="40" width="4" height="76" rx="2" fill="#E8E6E1" opacity="0.05"/>
+                                        <rect x="134" y="40" width="4" height="76" rx="2" fill="#E8E6E1" opacity="0.05"/>
+                                        <g transform="translate(88, 48) rotate(2)"><rect width="6" height="56" rx="3" fill="#4A90D9" opacity="0.3"/><rect width="6" height="14" rx="3" fill="#E0E6ED" opacity="0.1"/></g>
+                                        <circle cx="100" cy="138" r="8" fill="none" stroke="#E0E6ED" stroke-width="0.8" opacity="0.12"/>
+                                        <path d="M96 134 Q100 138 96 142" fill="none" stroke="#4A90D9" stroke-width="0.5" opacity="0.2"/>
+                                        <path d="M104 134 Q100 138 104 142" fill="none" stroke="#4A90D9" stroke-width="0.5" opacity="0.2"/>
+                                    </svg>
+                                </div>
+                                <h2>No applications yet</h2>
+                                <p>Apply to jobs to start tracking</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ Intel View (Insights & Analysis) ═══ -->
+            <div class="view" id="view-intel" data-view="intel">
+                <div class="insights-container" id="insights-container">
+                    <!-- Sub-nav tabs within Intel -->
+                    <div class="summary-tabs">
+                        <button class="summary-tab active" data-subtab="pregame" onclick="switchIntelTab('pregame', true)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L15 8 L12 6 L9 8 Z"/><path d="M12 6 L12 14"/><path d="M5 14 L12 14 L19 14"/><path d="M5 14 L12 22 L19 14"/></svg>
+                            Pregame Report
+                        </button>
+                        <button class="summary-tab" data-subtab="overview" onclick="switchIntelTab('overview', false)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                            Scoreboard
+                        </button>
+                        <button class="summary-tab" data-subtab="advisor" onclick="switchIntelTab('advisor', false)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                            Coaching Staff
+                        </button>
+                        <button class="summary-tab" data-subtab="skills-audit" onclick="switchIntelTab('skills-audit', false)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+                            Batting Practice
+                        </button>
+                        <button class="summary-tab" data-subtab="resume" onclick="switchIntelTab('resume', false)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            Equipment Check
+                        </button>
+                    </div>
+
+                    <!-- Pregame Report Sub-tab -->
+                    <div class="summary-panel active" id="subtab-pregame">
+                        <div class="insights-header">
+                            <h2>Pregame Report</h2>
+                            <p>Your pregame analysis hub — overview summary plus quick launch into each deep-dive</p>
+                            <div class="btn-group" style="margin-top:12px">
+                                <button class="btn btn-primary" onclick="loadPregameReport()">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-right:4px;vertical-align:-2px"><path d="M12 2 L15 8 L12 6 L9 8 Z"/><path d="M12 6 L12 14"/><path d="M5 14 L12 22 L19 14"/></svg>
+                                    Generate Report
+                                </button>
+                            </div>
+                        </div>
+                        <div id="pregame-report-content">
+                            <!-- Drill-down hub widgets (always visible) -->
+                            <div class="pregame-hub-grid">
+                                <div class="pregame-hub-widget">
+                                    <div class="pregame-hub-icon">
+                                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--jb-bright)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                                    </div>
+                                    <h4>Scoreboard</h4>
+                                    <p>Search stats, salary ranges, top companies, and market trends from your saved jobs.</p>
+                                    <button class="btn btn-secondary pregame-hub-btn" onclick="runFromHub(this, 'overview')">Run Scoreboard &rarr;</button>
+                                </div>
+                                <div class="pregame-hub-widget">
+                                    <div class="pregame-hub-icon">
+                                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--jb-bright)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                                    </div>
+                                    <h4>Coaching Staff</h4>
+                                    <p>AI strategy advice — get personalized recommendations on search tactics and positioning.</p>
+                                    <button class="btn btn-secondary pregame-hub-btn" onclick="runFromHub(this, 'advisor')">Run Coaching Staff &rarr;</button>
+                                </div>
+                                <div class="pregame-hub-widget">
+                                    <div class="pregame-hub-icon">
+                                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--jb-bright)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+                                    </div>
+                                    <h4>Batting Practice</h4>
+                                    <p>Skills gap analysis — see which in-demand skills you have and which ones to develop.</p>
+                                    <button class="btn btn-secondary pregame-hub-btn" onclick="runFromHub(this, 'skills-audit')">Run Batting Practice &rarr;</button>
+                                </div>
+                                <div class="pregame-hub-widget">
+                                    <div class="pregame-hub-icon">
+                                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--jb-bright)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                    </div>
+                                    <h4>Equipment Check</h4>
+                                    <p>Resume optimization — AI-powered analysis of your resume against job requirements.</p>
+                                    <button class="btn btn-secondary pregame-hub-btn" onclick="runFromHub(this, 'resume')">Run Equipment Check &rarr;</button>
+                                </div>
+                            </div>
+                            <!-- Summary report renders below the hub -->
+                            <div id="pregame-summary-area">
+                                <div class="empty-state">
+                                    <div class="empty-state-art">
+                                        <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+                                            <rect x="20" y="10" width="80" height="100" rx="8" fill="none" stroke="#4A90D9" stroke-width="0.8" opacity="0.15"/>
+                                            <circle cx="60" cy="40" r="15" fill="none" stroke="#4A90D9" stroke-width="0.6" opacity="0.2"/>
+                                            <line x1="35" y1="65" x2="85" y2="65" stroke="#4A90D9" stroke-width="0.8" opacity="0.12"/>
+                                            <line x1="35" y1="75" x2="75" y2="75" stroke="#4A90D9" stroke-width="0.6" opacity="0.1"/>
+                                            <line x1="35" y1="85" x2="80" y2="85" stroke="#4A90D9" stroke-width="0.6" opacity="0.08"/>
+                                            <line x1="35" y1="95" x2="70" y2="95" stroke="#4A90D9" stroke-width="0.6" opacity="0.06"/>
+                                        </svg>
+                                    </div>
+                                    <h2>No pregame report yet</h2>
+                                    <p>Click Generate Report to compile insights, or jump straight into any analysis above</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Overview Sub-tab -->
+                    <div class="summary-panel" id="subtab-overview">
+                        <div class="insights-header">
+                            <h2>Search Intelligence</h2>
+                            <p>AI-powered themes, trends, and strategic insights</p>
+                            <div class="btn-group" style="margin-top:12px">
+                                <button class="btn btn-primary" onclick="loadInsights()">🔄 Refresh</button>
+                                <button class="btn btn-secondary" onclick="deepResearchShortlist()">🔬 Deep Research Shortlist</button>
+                            </div>
+                        </div>
+                        <div id="insights-content">
+                            <div class="empty-state">
+                                <div class="empty-state-art">
+                                    <svg width="200" height="160" viewBox="0 0 200 160" fill="none">
+                                        <g transform="translate(60, 30)">
+                                            <path d="M40 50 Q20 30 25 55 Q15 40 18 60 Q10 48 15 65 Q8 70 20 80 Q30 90 50 85 Q70 80 75 60 Q78 45 65 35 Q55 28 40 50Z" fill="#134A8E" opacity="0.12" stroke="#4A90D9" stroke-width="0.8"/>
+                                            <circle cx="42" cy="62" r="11" fill="none" stroke="#E0E6ED" stroke-width="1" opacity="0.2"/>
+                                            <path d="M37 57 Q42 62 37 67" fill="none" stroke="#4A90D9" stroke-width="0.6" opacity="0.25"/>
+                                            <path d="M47 57 Q42 62 47 67" fill="none" stroke="#4A90D9" stroke-width="0.6" opacity="0.25"/>
+                                        </g>
+                                    </svg>
+                                </div>
+                                <h2>No insights yet</h2>
+                                <p>Search for jobs and browse some results to generate insights</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Advisor Sub-tab -->
+                    <div class="summary-panel" id="subtab-advisor">
+                        <div class="insights-header">
+                            <h2>Search Strategy Advisor</h2>
+                            <p>AI analysis of your resume, profile, and search patterns with actionable recommendations</p>
+                            <div class="btn-group" style="margin-top:12px">
+                                <button class="btn btn-primary" onclick="loadSearchAdvisor()">🔄 Get Fresh Analysis</button>
+                            </div>
+                        </div>
+                        <div id="advisor-content">
+                            <div class="empty-state">
+                                <div class="empty-state-art">
+                                    <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+                                        <g transform="translate(28, 28)">
+                                            <circle cx="32" cy="32" r="30" fill="none" stroke="#E8E6E1" stroke-width="0.5" opacity="0.08"/>
+                                            <circle cx="32" cy="32" r="22" fill="none" stroke="#E8E6E1" stroke-width="0.5" opacity="0.1"/>
+                                            <circle cx="32" cy="32" r="14" fill="none" stroke="#4A90D9" stroke-width="0.6" opacity="0.15"/>
+                                            <circle cx="32" cy="32" r="6" fill="#4A90D9" opacity="0.15"/>
+                                            <circle cx="32" cy="32" r="2" fill="#4A90D9" opacity="0.5"/>
+                                            <line x1="32" y1="0" x2="32" y2="10" stroke="#E8E6E1" stroke-width="0.4" opacity="0.08"/>
+                                            <line x1="32" y1="54" x2="32" y2="64" stroke="#E8E6E1" stroke-width="0.4" opacity="0.08"/>
+                                            <line x1="0" y1="32" x2="10" y2="32" stroke="#E8E6E1" stroke-width="0.4" opacity="0.08"/>
+                                            <line x1="54" y1="32" x2="64" y2="32" stroke="#E8E6E1" stroke-width="0.4" opacity="0.08"/>
+                                        </g>
+                                    </svg>
+                                </div>
+                                <h2>No analysis yet</h2>
+                                <p>Click above to get AI-powered feedback on your search strategy</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Skills Audit Sub-tab -->
+                    <div class="summary-panel" id="subtab-skills-audit" style="display:none">
+                        <div class="insights-header">
+                            <h2>Skills Audit</h2>
+                            <p>Compare your skills against what the market demands</p>
+                            <div class="btn-group" style="margin-top:12px">
+                                <button class="btn btn-primary" onclick="runSkillsAuditIntel()">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-right:4px;vertical-align:-2px"><circle cx="12" cy="12" r="10"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+                                    Run Audit
+                                </button>
+                            </div>
+                        </div>
+                        <div id="intel-skills-audit">
+                            <div class="empty-state">
+                                <div class="empty-state-art">
+                                    <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+                                        <circle cx="60" cy="60" r="40" fill="none" stroke="#4A90D9" stroke-width="0.6" opacity="0.1" stroke-dasharray="4 4"/>
+                                        <path d="M45 60l10 10 20-20" fill="none" stroke="#4A90D9" stroke-width="2" opacity="0.2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </div>
+                                <h2>No audit yet</h2>
+                                <p>Click Run Audit to analyze your skills against job postings</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Resume Sub-tab -->
+                    <div class="summary-panel" id="subtab-resume" style="display:none">
+                        <div class="insights-header">
+                            <h2>Resume Improver</h2>
+                            <p>AI-powered suggestions to strengthen your resume</p>
+                            <div class="btn-group" style="margin-top:12px">
+                                <button class="btn btn-primary" onclick="improveResumeIntel()">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-right:4px;vertical-align:-2px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                    Analyze Resume
+                                </button>
+                            </div>
+                        </div>
+                        <div id="intel-resume-container">
+                            <div class="empty-state">
+                                <div class="empty-state-art">
+                                    <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+                                        <rect x="30" y="15" width="60" height="80" rx="4" fill="none" stroke="#4A90D9" stroke-width="0.6" opacity="0.1" stroke-dasharray="4 4"/>
+                                        <line x1="42" y1="35" x2="78" y2="35" stroke="#4A90D9" stroke-width="1" opacity="0.15"/>
+                                        <line x1="42" y1="45" x2="72" y2="45" stroke="#4A90D9" stroke-width="1" opacity="0.1"/>
+                                        <line x1="42" y1="55" x2="75" y2="55" stroke="#4A90D9" stroke-width="1" opacity="0.1"/>
+                                        <line x1="42" y1="65" x2="66" y2="65" stroke="#4A90D9" stroke-width="1" opacity="0.08"/>
+                                    </svg>
+                                </div>
+                                <h2>No analysis yet</h2>
+                                <p>Click Analyze Resume to get AI improvement suggestions</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ Profile View (includes Settings) ═══ -->
+            <div class="view" id="view-profile" data-view="profile">
+                <!-- Profile/Settings Tab Bar -->
+                <div class="profile-tabs">
+                    <button class="profile-tab active" id="profile-tab-profile" onclick="switchProfileTab('profile')">Profile</button>
+                    <button class="profile-tab" id="profile-tab-settings" onclick="switchProfileTab('settings')">Settings</button>
+                </div>
+
+                <!-- ── Profile Tab Content ── -->
+                <div class="profile-tab-content active" id="profile-tab-content-profile">
+                <div class="profile-form">
+                    <!-- Profile header row with title + import button -->
+                    <div class="profile-header-row">
+                        <div>
+                            <h2 class="profile-title">Profile</h2>
+                            <p class="profile-subtitle">Powers job matching and auto-applications</p>
+                        </div>
+                        <button class="btn-import-link" id="btn-toggle-import" onclick="toggleImportSection()" title="Import from resume or document">
+                            <span class="btn-import-icon">↑</span> Import
+                        </button>
+                    </div>
+
+                    <!-- Import panel (collapsible, compact) -->
+                    <div id="profile-paste-mode" style="display:none" class="profile-import-panel">
+                        <div class="form-group">
+                            <label>Paste your full profile document</label>
+                            <textarea id="f-paste-text" rows="6" placeholder="Paste your candidate profile document here..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Or upload a file (PDF, DOCX, TXT)</label>
+                            <input type="file" id="f-resume-paste" accept=".pdf,.docx,.doc,.txt" style="padding:6px">
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary btn-sm" id="btn-parse-profile" onclick="parseAndSaveProfile()">Parse &amp; Import</button>
+                            <button class="btn btn-secondary btn-sm" onclick="toggleImportSection()">Cancel</button>
+                        </div>
+                        <div id="parsed-preview" style="display:none; margin-top:12px">
+                            <h4 style="margin-bottom:8px; color:var(--text-bright); font-size:13px">Parsed Preview</h4>
+                            <div id="parsed-preview-content" style="background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; font-size:13px; line-height:1.6"></div>
+                            <div class="btn-group" style="margin-top:10px">
+                                <button class="btn btn-success btn-sm" id="btn-confirm-parsed" onclick="confirmParsedProfile()">Apply to Form</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Readiness badge area (JS inserts readiness-panel here) -->
+
+                    <!-- Profile Form -->
+                    <form id="profile-form">
+
+                        <!-- ── Section: Contact Info ── -->
+                        <div class="profile-section">
+                            <div class="profile-section-header">Contact Info</div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Full Name</label>
+                                    <input type="text" id="f-name" required placeholder="Jane Smith">
+                                </div>
+                                <div class="form-group">
+                                    <label>Email</label>
+                                    <input type="email" id="f-email" placeholder="jane@example.com">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Phone</label>
+                                    <input type="tel" id="f-phone" placeholder="555-123-4567">
+                                </div>
+                                <div class="form-group">
+                                    <label>Location</label>
+                                    <input type="text" id="f-location" placeholder="New York, NY">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ── Section: Search Criteria ── -->
+                        <div class="profile-section">
+                            <div class="profile-section-header">Search Criteria</div>
+
+                            <div class="form-group" style="position:relative">
+                                <label>Target Job Titles <span class="label-hint">type to search · Enter to add</span></label>
+                                <div class="tag-input-container" id="roles-tags">
+                                    <input type="text" placeholder="e.g. Director, Information Security" id="f-roles-input" autocomplete="off">
+                                </div>
+                                <div class="suggestions-dropdown" id="roles-suggestions"></div>
+                            </div>
+
+                            <div class="form-group" style="position:relative">
+                                <label>Target Locations <span class="label-hint">type to search · Enter to add</span></label>
+                                <div class="tag-input-container" id="locations-tags">
+                                    <input type="text" placeholder="e.g. Toronto, ON" id="f-locations-input" autocomplete="off">
+                                </div>
+                                <div class="suggestions-dropdown" id="locations-suggestions"></div>
+                            </div>
+
+                            <div class="form-group" style="position:relative">
+                                <label>Skills <span class="label-hint">type to search · Enter to add</span></label>
+                                <div class="skill-demand-legend" id="skill-demand-legend" style="display:none">
+                                    <span><i class="legend-dot legend-dot-mvp"></i> MVP (70%+)</span>
+                                    <span><i class="legend-dot legend-dot-allstar"></i> All-Star (40-69%)</span>
+                                    <span><i class="legend-dot legend-dot-starter"></i> Starter (15-39%)</span>
+                                    <span><i class="legend-dot legend-dot-bench"></i> Bench (&lt;15%)</span>
+                                </div>
+                                <div class="tag-input-container" id="skills-tags">
+                                    <input type="text" placeholder="e.g. Risk Management, AWS, ISO 27001" id="f-skills-input" autocomplete="off">
+                                </div>
+                                <div class="suggestions-dropdown" id="skills-suggestions"></div>
+                                <button type="button" class="btn-skills-audit" id="btn-skills-audit" onclick="runSkillsAudit()" title="Analyze your skills against job market demand">Audit Skills</button>
+                                <div id="skills-audit-results" style="display:none"></div>
+                            </div>
+
+                            <div class="form-row form-row-3col">
+                                <div class="form-group">
+                                    <label>Min Salary</label>
+                                    <div class="salary-input-wrapper">
+                                        <input type="text" id="f-min-salary" placeholder="80,000" inputmode="numeric">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Experience (yrs)</label>
+                                    <input type="number" id="f-experience" placeholder="5">
+                                </div>
+                                <div class="form-group">
+                                    <label>Remote Pref</label>
+                                    <select id="f-remote">
+                                        <option value="any">Any</option>
+                                        <option value="remote">Remote Only</option>
+                                        <option value="hybrid">Hybrid</option>
+                                        <option value="onsite">On-site</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Tiers Down</label>
+                                    <select id="f-tiers-down">
+                                        <option value="0">None</option>
+                                        <option value="1">1 tier down</option>
+                                        <option value="2">2 tiers down</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Tiers Up</label>
+                                    <select id="f-tiers-up">
+                                        <option value="0">None</option>
+                                        <option value="1">1 tier up</option>
+                                        <option value="2">2 tiers up</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ── Section: Application Materials ── -->
+                        <div class="profile-section">
+                            <div class="profile-section-header">Application Materials</div>
+                            <div class="form-group">
+                                <label>Resume (PDF, DOCX, or TXT)</label>
+                                <input type="file" id="f-resume" accept=".pdf,.docx,.doc,.txt" style="padding:6px">
+                            </div>
+                            <div class="form-group">
+                                <label>Cover Letter Style Notes</label>
+                                <textarea id="f-cover-template" rows="2" placeholder="e.g. Keep it casual and emphasize my startup experience..."></textarea>
+                            </div>
+                        </div>
+
+                        <!-- ── Section: Job Sources ── -->
+                        <div class="profile-section">
+                            <div class="profile-section-header">Job Sources</div>
+                            <div id="source-selector" class="source-selector">
+                                <label class="source-chip"><input type="checkbox" value="linkedin" checked> LinkedIn</label>
+                                <label class="source-chip"><input type="checkbox" value="indeed" checked> Indeed</label>
+                                <label class="source-chip"><input type="checkbox" value="glassdoor" checked> Glassdoor</label>
+                                <label class="source-chip"><input type="checkbox" value="talent" checked> Talent.com</label>
+                                <label class="source-chip"><input type="checkbox" value="adzuna" checked> Adzuna</label>
+                                <label class="source-chip"><input type="checkbox" value="careerjet" checked> Careerjet</label>
+                                <label class="source-chip"><input type="checkbox" value="remoteok" checked> RemoteOK</label>
+                                <label class="source-chip"><input type="checkbox" value="jobbank" checked> Job Bank</label>
+                                <label class="source-chip"><input type="checkbox" value="gcjobs" checked> GC Jobs</label>
+                                <label class="source-chip"><input type="checkbox" value="usajobs"> USAJobs</label>
+                            </div>
+                        </div>
+
+                        <!-- Sticky save bar -->
+                        <div class="profile-save-bar">
+                            <button type="submit" class="btn btn-primary" id="btn-save-profile">Save Profile</button>
+                        </div>
+                    </form>
+
+                    <!-- Interview Q&A Section -->
+                    <div class="interview-section" id="interview-section">
+                        <div class="profile-section-header">Profile Interview</div>
+                        <p style="color:var(--text-dim); font-size:12px; margin-bottom:10px">Answer questions to improve cover letters, scoring, and application responses.</p>
+                        <div id="interview-container"></div>
+                    </div>
+
+                    <!-- Resume Improver Section -->
+                    <div class="interview-section" id="resume-improver-section">
+                        <div class="profile-section-header" style="display:flex;justify-content:space-between;align-items:center">
+                            Resume Improver
+                            <button class="btn btn-sm btn-primary" onclick="improveResume()" id="improve-resume-btn">Improve My Resume</button>
+                        </div>
+                        <p style="color:var(--text-dim); font-size:12px; margin-bottom:10px">AI-powered suggestions to strengthen your resume for ATS and recruiters.</p>
+                        <div id="resume-improver-container"></div>
+                    </div>
+
+                </div>
+                </div><!-- end profile-tab-content-profile -->
+
+                <!-- ── Settings Tab Content ── -->
+                <div class="profile-tab-content" id="profile-tab-content-settings">
+                <div class="settings-container">
+                    <h2>Settings</h2>
+                    <p style="color:var(--text-dim); margin-bottom:24px">Configure search, scoring, display, and platform options</p>
+
+                    <!-- Search Settings -->
+                    <div class="settings-section">
+                        <h3>Search Settings</h3>
+                        <p>Control how job searches are performed.</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Auto-search Frequency</label>
+                                <select id="setting-auto-search-freq">
+                                    <option value="manual">Manual Only</option>
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Max Results per Source</label>
+                                <select id="setting-max-results">
+                                    <option value="10">10</option>
+                                    <option value="25" selected>25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Minimum Match Score to Show</label>
+                                <select id="setting-min-score">
+                                    <option value="0">Show All (0+)</option>
+                                    <option value="30">30+</option>
+                                    <option value="50">50+</option>
+                                    <option value="60">60+</option>
+                                    <option value="70">70+</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Include Expired/Closed Listings</label>
+                                <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+                                    <label class="settings-toggle">
+                                        <input type="checkbox" id="setting-include-expired">
+                                        <span class="settings-toggle-slider"></span>
+                                    </label>
+                                    <span style="font-size:13px;color:var(--text-dim)" id="setting-include-expired-label">Off</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scoring Engine -->
+                    <div class="settings-section">
+                        <h3>Scoring Engine</h3>
+                        <p>Re-score all jobs with the latest calibrated engine. This applies updated weighting and level-appropriate scoring.</p>
+                        <div class="settings-actions">
+                            <button class="btn btn-secondary" id="btn-rescore-settings" onclick="rescoreJobs()">Rescore All Jobs</button>
+                            <button class="btn btn-secondary" id="btn-reanalyze" onclick="reanalyzeProfile()">Re-analyze Profile</button>
+                        </div>
+                        <div class="settings-subsection" style="margin-top:16px">
+                            <h4 style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Score Weights</h4>
+                            <div class="weights-display" id="weights-display"></div>
+                        </div>
+                    </div>
+
+                    <!-- AI Provider -->
+                    <div class="settings-section">
+                        <h3>AI Provider</h3>
+                        <div id="ai-provider-status" class="provider-status">
+                            <span class="provider-badge" id="provider-badge">Checking...</span>
+                        </div>
+                        <p style="font-size:12px; color:var(--text-dim); margin-top:8px">
+                            Set <code>ANTHROPIC_API_KEY</code> in .env for Claude (preferred), or <code>GEMINI_API_KEY</code> for Gemini fallback.
+                        </p>
+                    </div>
+
+                    <!-- Application Testing -->
+                    <div class="settings-section">
+                        <h3>Application Testing</h3>
+                        <p>Dry Run mode prepares everything (cover letter, form answers, automation plan) but stops before final submission.</p>
+                        <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+                            <label class="settings-toggle">
+                                <input type="checkbox" id="dry-run-toggle" checked>
+                                <span class="settings-toggle-slider"></span>
+                            </label>
+                            <span style="font-size:14px;color:var(--text-bright)" id="dry-run-label">Dry Run Mode: ON (Safe)</span>
+                        </div>
+                        <p style="font-size:12px;color:var(--text-dim);margin-top:8px">
+                            Your uploaded resume is used for: generating tailored cover letters, matching skills, and pre-filling application forms. It is <strong>never</strong> submitted automatically without your explicit confirmation.
+                        </p>
+                    </div>
+
+                    <!-- Notification Preferences -->
+                    <div class="settings-section">
+                        <h3>Notification Preferences</h3>
+                        <p>Configure how you receive updates about your job search.</p>
+                        <div class="form-group">
+                            <label>Email Digest Frequency</label>
+                            <select id="setting-email-digest" disabled>
+                                <option value="none">None</option>
+                                <option value="daily">Daily Summary</option>
+                                <option value="weekly">Weekly Roundup</option>
+                            </select>
+                            <span style="font-size:11px;color:var(--text-muted);margin-top:2px">Coming soon - requires email integration</span>
+                        </div>
+                    </div>
+
+                    <!-- Display Settings -->
+                    <div class="settings-section">
+                        <h3>Display Settings</h3>
+                        <p>Customize how jobs and content appear.</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Default Browse View</label>
+                                <select id="setting-default-view">
+                                    <option value="list">List</option>
+                                    <option value="grid">Grid</option>
+                                    <option value="card">Card (Swipe)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Cards per Page</label>
+                                <select id="setting-cards-per-page">
+                                    <option value="10">10</option>
+                                    <option value="25" selected>25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Theme</label>
+                            <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+                                <label class="settings-toggle">
+                                    <input type="checkbox" id="setting-dark-theme" checked disabled>
+                                    <span class="settings-toggle-slider"></span>
+                                </label>
+                                <span style="font-size:13px;color:var(--text-dim)">Dark Mode (light theme coming soon)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- API Keys -->
+                    <div class="settings-section">
+                        <h3>API Keys</h3>
+                        <p>Add your own API keys to enable additional job sources. Keys are stored locally in your browser and sent to the server per-request.</p>
+                        <div class="form-group" style="margin-bottom:12px">
+                            <label>SerpAPI Key</label>
+                            <input type="password" id="setting-serpapi-key" placeholder="Enter SerpAPI key..." autocomplete="off">
+                            <span style="font-size:11px;color:var(--text-muted);margin-top:2px">Enables Google Jobs aggregated results (Indeed, Glassdoor, etc.)</span>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Adzuna App ID</label>
+                                <input type="text" id="setting-adzuna-app-id" placeholder="Adzuna App ID" autocomplete="off">
+                            </div>
+                            <div class="form-group">
+                                <label>Adzuna API Key</label>
+                                <input type="password" id="setting-adzuna-key" placeholder="Adzuna API Key" autocomplete="off">
+                            </div>
+                        </div>
+                        <span style="font-size:11px;color:var(--text-muted)">Adzuna keys enable the Adzuna job source with your own quota.</span>
+                        <div class="settings-actions" style="margin-top:12px">
+                            <button class="btn btn-primary btn-sm" onclick="saveApiKeys()">Save API Keys</button>
+                            <button class="btn btn-secondary btn-sm" onclick="clearApiKeys()">Clear Keys</button>
+                        </div>
+                    </div>
+
+                    <!-- Data Management -->
+                    <div class="settings-section">
+                        <h3>Data Management</h3>
+                        <p>Manage job data quality and integrity.</p>
+                        <div class="settings-actions">
+                            <button class="btn btn-secondary" onclick="verifyAllJobs()">Verify Pending Jobs</button>
+                            <button class="btn btn-secondary" onclick="reenrichCompanies()">Refresh Logos</button>
+                            <button class="btn btn-secondary" onclick="dedupJobs()">Clean Duplicates</button>
+                            <button class="btn btn-secondary" onclick="deepResearchShortlist()">Deep Research Shortlist</button>
+                        </div>
+                        <div class="settings-actions" style="margin-top:12px">
+                            <button class="btn btn-secondary" onclick="exportJobsCSV()">Export Jobs to CSV</button>
+                            <button class="btn btn-secondary" onclick="resetProfile()">Reset Profile</button>
+                        </div>
+                    </div>
+
+                    <!-- Danger Zone -->
+                    <div class="settings-section" style="border-color: var(--red, #e05252)">
+                        <h3>Danger Zone</h3>
+                        <p>Clear all jobs, applications, and companies from your profile. Your profile and preferences are kept.</p>
+                        <div class="settings-actions" style="margin-top:12px">
+                            <button class="btn btn-danger" onclick="resetDatabase()">Reset All Job Data</button>
+                        </div>
+                        <p style="font-size:11px; color:var(--text-dim); margin-top:8px">This cannot be undone. You'll start fresh with a clean slate.</p>
+                    </div>
+
+                    <!-- About -->
+                    <div class="settings-section">
+                        <h3>About</h3>
+                        <div style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text-dim)">
+                            <div><strong style="color:var(--text-bright)">Jobbunt</strong> &mdash; Tinder-style job search &amp; auto-apply</div>
+                            <div>Version <code>2026.03</code></div>
+                            <div>
+                                <a href="#" onclick="event.preventDefault();showView('profile');switchProfileTab('profile')" style="color:var(--accent)">Developer Kit</a>
+                                &middot; Design tokens, CSS variables, and component patterns
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Save Settings Bar -->
+                    <div class="profile-save-bar">
+                        <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+                    </div>
+                </div>
+                </div><!-- end profile-tab-content-settings -->
+            </div>
+        </main>
+
+        <!-- Questions Panel -->
+        <div class="questions-panel" id="questions-panel">
+            <h3 style="margin-bottom:12px">The application agent has questions:</h3>
+            <div id="questions-list"></div>
+            <button class="btn btn-primary" id="btn-submit-answers" style="margin-top:12px">Submit Answers</button>
+        </div>
+
+        <!-- Toast Container -->
+        <div class="toast-container" id="toast-container"></div>
+    </div>
+
+    <script src="/static/js/app.js?v=20260317b"></script>
+</body>
+</html>

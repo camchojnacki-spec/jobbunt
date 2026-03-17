@@ -1,0 +1,12 @@
+{
+  "linkedin": {"enabled": true, "method": "scrape", "notes": "HTML scraping, most reliable free source"},
+  "indeed": {"enabled": true, "method": "serpapi", "api_key": "", "notes": "Requires SerpAPI key ($50/mo, 100 free). Direct scraping blocked by Cloudflare."},
+  "glassdoor": {"enabled": false, "method": "api_only", "api_key": "", "notes": "Blocked by Cloudflare. Requires SerpAPI or Glassdoor Partner API."},
+  "careerjet": {"enabled": true, "method": "scrape", "notes": "HTML scraping, good Canadian coverage"},
+  "jobbank": {"enabled": true, "method": "scrape", "notes": "Government job board, reliable"},
+  "talent": {"enabled": true, "method": "scrape", "notes": "Next.js site, extracts via JSON data"},
+  "adzuna": {"enabled": true, "method": "api", "app_id": "", "api_key": "", "notes": "Free tier: 250 calls/mo. Sign up at developer.adzuna.com"},
+  "serpapi": {"enabled": true, "method": "api", "api_key": "", "notes": "Aggregates Indeed+Google Jobs. Free: 100/mo. serpapi.com"},
+  "remoteok": {"enabled": true, "method": "api", "notes": "JSON API, remote jobs only"},
+  "google_jobs": {"enabled": true, "method": "scrape", "notes": "Rate-limited to 3 queries/session"}
+}
