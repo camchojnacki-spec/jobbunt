@@ -68,6 +68,11 @@ def _run_migrations():
         ("profiles", "security_clearance", "VARCHAR(100)"),
         ("profiles", "travel_willingness", "VARCHAR(100)"),
         ("profiles", "additional_notes", "TEXT"),
+        # Pipeline status tracking for applications
+        ("applications", "pipeline_status", "VARCHAR(50) DEFAULT 'applied'"),
+        ("applications", "notes", "TEXT"),
+        # Per-job user notes
+        ("jobs", "user_notes", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, column, col_type in migrations:
