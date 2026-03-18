@@ -118,7 +118,7 @@ body::before {
     z-index: 0;
 }
 
-.page { position: relative; z-index: 1; }
+.page { position: relative; z-index: 1; padding-bottom: 72px; }
 
 /* ── Layout ── */
 .app {
@@ -128,18 +128,87 @@ body::before {
 }
 
 /* Nav — new design language */
-.nav {
+.nav { display: none; } /* Legacy — replaced by top-bar + bottom-tabs */
+
+.top-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 32px;
-    height: 56px;
+    padding: 0 20px;
+    height: 48px;
     border-bottom: 1px solid var(--jb-border);
     backdrop-filter: blur(16px);
     background: rgba(9, 14, 24, 0.92);
     position: sticky;
     top: 0;
     z-index: 100;
+}
+
+/* ── Bottom Tab Bar ── */
+.bottom-tabs {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-around;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: rgba(9, 14, 24, 0.96);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid var(--jb-border);
+    z-index: 100;
+    padding: 0 4px;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.bottom-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    color: var(--jb-text-3);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    padding: 6px 4px;
+    position: relative;
+    font-family: var(--jb-font);
+}
+.bottom-tab svg {
+    width: 22px;
+    height: 22px;
+    opacity: 0.5;
+    transition: all 0.2s;
+}
+.bottom-tab span {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+.bottom-tab:hover {
+    color: var(--jb-text-2);
+}
+.bottom-tab:hover svg { opacity: 0.7; }
+.bottom-tab.active {
+    color: var(--jb-text-1);
+}
+.bottom-tab.active svg {
+    opacity: 1;
+    stroke: var(--jb-text-1);
+}
+.bottom-tab.active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 25%;
+    right: 25%;
+    height: 2px;
+    background: var(--jb-bright);
+    border-radius: 0 0 2px 2px;
 }
 .nav-brand { display: flex; align-items: center; }
 .nav-links { display: flex; align-items: center; gap: 4px; }

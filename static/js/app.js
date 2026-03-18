@@ -107,13 +107,17 @@ function showView(name) {
     document.querySelectorAll('.view').forEach(v => {
         v.classList.remove('active', 'view-enter', 'view-exit');
     });
-    document.querySelectorAll('.nav-btn, .nav-link').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.nav-btn, .nav-link, .bottom-tab').forEach(b => b.classList.remove('active'));
 
     const newView = document.getElementById(`view-${name}`);
     if (newView) {
         newView.classList.add('active', 'view-enter');
         setTimeout(() => newView.classList.remove('view-enter'), 200);
     }
+
+    // Highlight bottom tab
+    const bottomTab = document.querySelector(`.bottom-tab[data-view="${name}"]`);
+    if (bottomTab) bottomTab.classList.add('active');
 
     const navEl = document.querySelector(`.nav-link[data-view="${name}"]`) || document.querySelector(`.nav-btn[data-view="${name}"]`);
     if (navEl) navEl.classList.add('active');
