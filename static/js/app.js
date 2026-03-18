@@ -280,7 +280,9 @@ async function parseAndSaveProfile() {
 
 async function confirmParsedProfile() {
     const parsed = state.parsedProfile;
-    if (!parsed) return;
+    if (!parsed) { toast('No parsed profile data — try scanning your resume again', 'warning'); return; }
+    const btn = document.getElementById('btn-confirm-parsed');
+    setButtonLoading(btn, true);
 
     const data = {
         name: parsed.name || 'Unknown',
@@ -320,10 +322,14 @@ async function confirmParsedProfile() {
             toast('Resume uploaded!', 'success');
         }
 
-        document.getElementById('no-profile-state').style.display = 'none';
         document.getElementById('parsed-preview').style.display = 'none';
+        // Fill the form with the saved profile data
+        populateProfileForm(profile);
         updateNavAvatar();
         try { const ps = await api('/profiles'); populateProfileDropdown(ps); } catch(e) { /* ok */ }
+        // Scroll down to the form so user can review
+        const step2 = document.querySelector('#profile-form .profile-section');
+        if (step2) step2.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
         toast('Failed to save profile: ' + e.message, 'error');
     }
@@ -4682,26 +4688,20 @@ async function generateAll() {
         if (widget) widget.classList.add('pregame-widget-running');
     });
 
-    // Run all analyses in parallel
+    // Run all analyses in parallel (min 1s loading state so user sees feedback)
     const runners = tabs.map((tab, i) => {
         const runner = _getIntelRunner(tab);
         if (!runner) return Promise.resolve();
-        return runner().then(() => {
+        const minDelay = new Promise(r => setTimeout(r, 1000));
+        return Promise.allSettled([runner(), minDelay]).then(([result]) => {
             const btn = hubBtns[i];
             if (btn) {
                 setButtonLoading(btn, false);
                 const widget = btn.closest('.pregame-hub-widget');
                 if (widget) {
                     widget.classList.remove('pregame-widget-running');
-                    widget.classList.add('pregame-widget-done');
+                    if (result.status === 'fulfilled') widget.classList.add('pregame-widget-done');
                 }
-            }
-        }).catch(() => {
-            const btn = hubBtns[i];
-            if (btn) {
-                setButtonLoading(btn, false);
-                const widget = btn.closest('.pregame-hub-widget');
-                if (widget) widget.classList.remove('pregame-widget-running');
             }
         });
     });
@@ -4932,11 +4932,17 @@ async function _doImproveResume(el) {
 // ── Reporter Corner ─────────────────────────────────────────────────────
 
 const REPORTER_QUESTIONS = [
-    { q: "What's your ideal work environment?", choices: ["Remote-first startup", "Hybrid corporate", "Small team, big impact", "Enterprise with clear structure"], profileField: "ideal_culture" },
-    { q: "What motivates you most?", choices: ["Solving hard problems", "Building teams", "Making an impact", "Learning new tech"], profileField: "values" },
-    { q: "What's your biggest strength?", choices: ["Technical depth", "Strategic thinking", "People leadership", "Cross-functional communication"], profileField: "strengths" },
-    { q: "How do you prefer to grow?", choices: ["Hands-on projects", "Mentorship", "Formal training", "Stretch assignments"], profileField: "growth_areas" },
-    { q: "What's a deal-breaker for you?", choices: ["Micromanagement", "No remote option", "Below-market pay", "Toxic culture"], profileField: "deal_breakers" },
+    // Profile-filling questions that actually help search & matching
+    { q: "What's your preferred work setup?", choices: ["Fully remote", "Hybrid (2-3 days in office)", "On-site", "No preference"], profileField: "remote_preference", mapTo: { "Fully remote": "remote", "Hybrid (2-3 days in office)": "hybrid", "On-site": "onsite", "No preference": "any" } },
+    { q: "What seniority level are you targeting?", choices: ["Manager / Senior Manager", "Director", "VP / SVP", "C-Suite (CISO, CTO, etc.)"], profileField: "seniority_level", mapTo: { "Manager / Senior Manager": "senior", "Director": "director", "VP / SVP": "vp", "C-Suite (CISO, CTO, etc.)": "c-suite" } },
+    { q: "What's your minimum salary expectation?", choices: ["$100K - $130K", "$130K - $160K", "$160K - $200K", "$200K+"], profileField: "min_salary", mapTo: { "$100K - $130K": "100000", "$130K - $160K": "130000", "$160K - $200K": "160000", "$200K+": "200000" } },
+    { q: "What industries interest you most?", choices: ["Financial Services / Banking", "Tech / SaaS", "Government / Public Sector", "Healthcare / Pharma"], profileField: "industry_preference" },
+    { q: "Are you open to contract or consulting roles?", choices: ["Permanent only", "Open to contract", "Prefer contract / consulting", "No preference"], profileField: "employment_type" },
+    { q: "How far are you willing to commute?", choices: ["Under 30 min", "30 - 60 min", "Over 60 min if needed", "Remote only"], profileField: "commute_tolerance" },
+    { q: "Would you consider roles that require relocation?", choices: ["Yes, anywhere", "Yes, within my country", "Only for the right role", "No, staying put"], profileField: "relocation" },
+    { q: "What size company do you prefer?", choices: ["Startup (< 50 people)", "Mid-size (50 - 500)", "Large enterprise (500+)", "No preference"], profileField: "company_size" },
+    { q: "How soon are you looking to start?", choices: ["Immediately", "Within 1 month", "2 - 3 months", "Just exploring"], profileField: "availability" },
+    { q: "What matters most in your next role?", choices: ["Compensation & benefits", "Growth & title advancement", "Mission & impact", "Work-life balance"], profileField: "top_priority" },
 ];
 
 let _reporterQuestionIndex = 0;
@@ -4972,13 +4978,27 @@ async function saveReporterAnswer() {
     const q = REPORTER_QUESTIONS[_reporterQuestionIndex % REPORTER_QUESTIONS.length];
     const taEl = document.getElementById('reporter-textarea');
     const answer = taEl ? taEl.value.trim() : '';
-    if (!answer) { toast('Write an answer first', 'warning'); return; }
+    if (!answer) { toast('Pick an option or write your own', 'warning'); return; }
 
     try {
-        await api(`/profiles/${state.profileId}/apply-advisor-suggestion`, {
-            method: 'POST',
-            body: { field: q.profileField, value: answer }
-        });
+        // Map choice to actual profile value if mapTo exists
+        const mappedValue = q.mapTo ? (q.mapTo[answer] || answer) : answer;
+
+        // Try to update the actual profile field directly
+        if (state.profileId && q.profileField) {
+            const updateBody = {};
+            updateBody[q.profileField] = mappedValue;
+            try {
+                await api(`/profiles/${state.profileId}`, { method: 'PUT', body: updateBody });
+            } catch(e) {
+                // Field might not exist on profile model — save as additional_info instead
+                await api(`/profiles/${state.profileId}/apply-advisor-suggestion`, {
+                    method: 'POST',
+                    body: { field: q.profileField, value: mappedValue }
+                });
+            }
+        }
+
         const msgEl = document.getElementById('reporter-saved-msg');
         if (msgEl) { msgEl.textContent = 'Saved!'; setTimeout(() => msgEl.textContent = '', 2000); }
         _reporterQuestionIndex++;

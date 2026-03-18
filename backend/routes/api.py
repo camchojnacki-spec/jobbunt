@@ -238,7 +238,10 @@ async def parse_profile_text(data: ProfilePasteInput):
 CRITICAL RULES FOR EACH FIELD:
 - **target_roles**: Extract EXACT job titles the candidate is targeting. These must be real, searchable job titles
   (e.g. "Director, Information Security" NOT "Director-level security roles"). Include title variations
-  (e.g. both "CISO" and "Chief Information Security Officer"). Max 10 titles.
+  (e.g. both "CISO" and "Chief Information Security Officer"). Also generate GRANULAR individual titles
+  from compound roles — e.g. "Director, IT Operations & Cybersecurity" should produce BOTH
+  "Director, IT Operations" AND "Director, Cybersecurity" as separate entries. Include shorter
+  variations too like "Cybersecurity Director", "IT Security Director". Max 12 titles.
 - **target_locations**: Extract specific geographic locations (city, province/state, country).
   Include variations like "Toronto, ON" and "GTA". If remote is mentioned, include "Remote" as a location too.
 - **skills**: Extract MARKET-STANDARD skill terms that would appear in job postings.
