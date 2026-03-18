@@ -4199,14 +4199,10 @@ body::before {
 
 /* ── Job Filter Bar ── */
 .job-filter-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    display: block;
     width: 100%;
     max-width: 100%;
-    padding: 6px 16px;
-    gap: 10px;
-    flex-wrap: wrap;
+    padding: 6px 16px 10px;
 }
 .filter-group {
     display: flex;
@@ -4331,6 +4327,84 @@ body::before {
     font-family: var(--mono);
     white-space: nowrap;
     flex-shrink: 0;
+}
+
+/* ── Filter Toggle Row ── */
+.filter-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    flex-wrap: wrap;
+}
+.filter-toggle-btn {
+    padding: 5px 12px;
+    font-size: 12px;
+    font-family: var(--font);
+    font-weight: 500;
+    background: var(--panel);
+    color: var(--text-dim);
+    border: 1px solid var(--wire);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+.filter-toggle-btn:hover { color: var(--text-bright); border-color: var(--sky); }
+.filter-chevron {
+    display: inline-block;
+    transition: transform 0.2s;
+    font-size: 14px;
+    line-height: 1;
+}
+.filter-chevron.open { transform: rotate(90deg); }
+.filter-fields-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    flex-wrap: wrap;
+    padding-top: 8px;
+    border-top: 1px solid var(--wire-dim);
+    margin-top: 6px;
+}
+.filter-clear-btn {
+    padding: 5px 10px;
+    font-size: 11px;
+    font-family: var(--font);
+    font-weight: 500;
+    background: var(--maple-dim);
+    color: var(--maple);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.filter-clear-btn:hover {
+    background: var(--maple-glow);
+    border-color: var(--maple);
+}
+.filter-sort-dir-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s;
+    line-height: 1;
+}
+.filter-sort-dir-btn:hover { color: var(--text-bright); border-color: var(--sky); }
+@media (max-width: 640px) {
+    .filter-toggle-row { gap: 6px; }
+    .filter-fields-row { gap: 6px; }
+    .filter-sort-group { order: 10; width: 100%; justify-content: flex-start; }
+    .filter-search, .filter-select { min-width: 0; flex: 1; max-width: none; }
 }
 
 /* ── Job Pagination ── */

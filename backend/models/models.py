@@ -181,6 +181,9 @@ class Job(Base):
     match_reasons = Column(Text)  # JSON list of match reasons
     match_breakdown = Column(Text)  # JSON dict of dimension scores
 
+    # User notes
+    user_notes = Column(Text)  # User's personal notes about this job
+
     # Swipe status
     status = Column(String(50), default="pending")  # pending, liked, passed, applied, rejected
     swiped_at = Column(DateTime, nullable=True)
@@ -212,9 +215,11 @@ class Application(Base):
     profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=False)
 
     status = Column(String(50), default="queued")  # queued, in_progress, needs_input, completed, failed
+    pipeline_status = Column(String(50), default="applied")  # applied, screening, interview, offer, accepted, rejected, no_response
     cover_letter = Column(Text)
     agent_log = Column(Text)  # JSON log of agent actions
     error_message = Column(Text)
+    notes = Column(Text)  # User notes about this application
     applied_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

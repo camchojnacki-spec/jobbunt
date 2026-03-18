@@ -39,6 +39,16 @@ let state = {
     parsedProfile: null,
     profileMode: 'paste',
     authUser: null,
+    filters: {
+        scoreMin: 0,
+        remoteType: 'all',
+        salaryMin: '',
+        keyword: '',
+        datePosted: 'all',
+        sortBy: 'score',
+        sortDir: 'desc',
+        filtersOpen: false,
+    },
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────
@@ -142,6 +152,7 @@ function showView(name) {
     if (navEl) navEl.classList.add('active');
 
     if (name === 'dugout') {
+        if (typeof loadCoachNote === 'function') loadCoachNote();
         if (typeof loadStats === 'function') loadStats();
         if (typeof loadDugoutReadiness === 'function') loadDugoutReadiness();
         if (typeof loadDugoutSeasonStats === 'function') loadDugoutSeasonStats();
@@ -289,14 +300,56 @@ async function parseAndSaveProfile() {
         const preview = document.getElementById('parsed-preview');
         const content = document.getElementById('parsed-preview-content');
 
+        // Build comparison view: current profile vs AI-parsed values with checkboxes
+        const currentProf = state.profile || {};
+        const compFields = [
+            { key: 'name', label: 'Name', type: 'string' },
+            { key: 'email', label: 'Email', type: 'string' },
+            { key: 'phone', label: 'Phone', type: 'string' },
+            { key: 'location', label: 'Location', type: 'string' },
+            { key: 'target_roles', label: 'Target Roles', type: 'list' },
+            { key: 'skills', label: 'Skills', type: 'list' },
+            { key: 'target_locations', label: 'Target Locations', type: 'list' },
+            { key: 'experience_years', label: 'Experience', type: 'number', suffix: ' years' },
+            { key: 'seniority_level', label: 'Seniority', type: 'string' },
+            { key: 'remote_preference', label: 'Remote Pref', type: 'string' },
+            { key: 'min_salary', label: 'Min Salary', type: 'number' },
+            { key: 'max_salary', label: 'Max Salary', type: 'number' },
+        ];
+        function _isEmptyParsed(v) {
+            if (v === null || v === undefined) return true;
+            if (typeof v === 'string') { const l = v.trim().toLowerCase(); return !l || ['not found','unknown','n/a','none','null'].includes(l); }
+            if (Array.isArray(v)) return v.length === 0;
+            return false;
+        }
+        function _dispVal(v, type, suffix) {
+            if (_isEmptyParsed(v)) return '<span style="color:var(--jb-text-dim);font-style:italic">empty</span>';
+            if (type === 'list') return v.map(s => `<span class="reason-tag">${esc(s)}</span>`).join(' ');
+            return esc(String(v)) + (suffix || '');
+        }
+        function _confBadge(score) {
+            if (score === undefined || score === null) return '';
+            const pct = Math.round(score * 100);
+            const clr = pct >= 80 ? '#4caf50' : pct >= 50 ? '#ff9800' : '#f44336';
+            return ` <span style="font-size:10px;color:${clr}" title="AI confidence">${pct}%</span>`;
+        }
+        let compRows = '';
+        for (const f of compFields) {
+            const aiVal = parsed[f.key], curVal = currentProf[f.key];
+            const aiEmpty = _isEmptyParsed(aiVal);
+            const hasChange = !aiEmpty && (JSON.stringify(aiVal) !== JSON.stringify(curVal));
+            const checked = hasChange && !aiEmpty;
+            const conf = parsed[f.key + '_confidence'];
+            compRows += `<div style="display:grid;grid-template-columns:24px 1fr 1fr auto;gap:6px;align-items:start;padding:5px 0;border-bottom:1px solid var(--border,#333)">
+                <label style="display:flex;align-items:center;padding-top:12px"><input type="checkbox" class="parse-field-check" data-field="${f.key}" ${checked ? 'checked' : ''} ${aiEmpty ? 'disabled' : ''}></label>
+                <div><div style="font-size:10px;color:var(--jb-text-dim)">Current ${esc(f.label)}</div><div style="font-size:12px">${_dispVal(curVal, f.type, f.suffix)}</div></div>
+                <div><div style="font-size:10px;color:var(--accent-light)">AI found${_confBadge(conf)}</div><div style="font-size:12px">${_dispVal(aiVal, f.type, f.suffix)}</div></div>
+                <div style="font-size:10px;color:var(--jb-text-dim);padding-top:12px">${aiEmpty ? 'no data' : hasChange ? 'changed' : 'same'}</div>
+            </div>`;
+        }
         content.innerHTML = `
-            <div style="display:grid; gap:8px">
-                <div><strong style="color:var(--accent-light)">Name:</strong> ${esc(parsed.name || 'Not found')}</div>
-                <div><strong style="color:var(--accent-light)">Location:</strong> ${esc(parsed.location || 'Not found')}</div>
-                <div><strong style="color:var(--accent-light)">Target Roles:</strong> ${(parsed.target_roles || []).map(r => `<span class="reason-tag">${esc(r)}</span>`).join(' ') || 'None detected — you can add them below'}</div>
-                <div><strong style="color:var(--accent-light)">Skills:</strong> ${(parsed.skills || []).map(s => `<span class="reason-tag">${esc(s)}</span>`).join(' ') || 'None detected'}</div>
-                <div><strong style="color:var(--accent-light)">Experience:</strong> ${parsed.experience_years ? parsed.experience_years + ' years' : 'Not found'}</div>
-            </div>
+            <div style="font-size:11px;color:var(--jb-text-dim);margin-bottom:8px">Check the fields you want to update. Unchecked fields keep their current values.</div>
+            <div style="max-height:350px;overflow-y:auto">${compRows}</div>
             <p style="margin-top:10px;font-size:12px;color:var(--jb-text-dim)">You can fine-tune everything in the form below after saving.</p>
         `;
 
@@ -315,21 +368,55 @@ async function confirmParsedProfile() {
     const btn = document.getElementById('btn-confirm-parsed');
     setButtonLoading(btn, true);
 
-    const data = {
-        name: parsed.name || 'Unknown',
-        email: parsed.email || null,
-        phone: parsed.phone || null,
-        location: parsed.location || null,
-        target_roles: parsed.target_roles || [],
-        target_locations: parsed.target_locations || [],
-        min_salary: parsed.min_salary || null,
-        max_salary: parsed.max_salary || null,
-        remote_preference: parsed.remote_preference || 'any',
-        experience_years: parsed.experience_years || null,
-        skills: parsed.skills || [],
-        cover_letter_template: parsed.cover_letter_template || null,
-        raw_profile_doc: parsed.raw_profile_doc || null,
+    // Only apply fields the user checked in the comparison view
+    const checkedFields = new Set();
+    document.querySelectorAll('.parse-field-check:checked').forEach(cb => {
+        checkedFields.add(cb.dataset.field);
+    });
+
+    // Helper: is value empty/placeholder?
+    function _isEmpty(v) {
+        if (v === null || v === undefined) return true;
+        if (typeof v === 'string') { const l = v.trim().toLowerCase(); return !l || ['not found','unknown','n/a','none','null'].includes(l); }
+        if (Array.isArray(v)) return v.length === 0;
+        return false;
+    }
+
+    // Start from existing profile data, only overwrite checked fields with non-empty AI values
+    const existing = state.profile || {};
+    const allFields = {
+        name: { fallback: 'Unknown' },
+        email: { fallback: null },
+        phone: { fallback: null },
+        location: { fallback: null },
+        target_roles: { fallback: [] },
+        target_locations: { fallback: [] },
+        min_salary: { fallback: null },
+        max_salary: { fallback: null },
+        remote_preference: { fallback: 'any' },
+        experience_years: { fallback: null },
+        skills: { fallback: [] },
+        cover_letter_template: { fallback: null },
     };
+
+    const data = {};
+    for (const [key, meta] of Object.entries(allFields)) {
+        const aiVal = parsed[key];
+        const curVal = existing[key];
+        if (checkedFields.has(key) && !_isEmpty(aiVal)) {
+            // User accepted the AI value
+            data[key] = aiVal;
+        } else if (curVal !== undefined && curVal !== null) {
+            // Keep existing profile value
+            data[key] = curVal;
+        } else if (!_isEmpty(aiVal)) {
+            // No existing value and AI has something (for new profiles)
+            data[key] = aiVal;
+        } else {
+            data[key] = meta.fallback;
+        }
+    }
+    data.raw_profile_doc = parsed.raw_profile_doc || existing.raw_profile_doc || null;
 
     try {
         let profile;
@@ -786,6 +873,175 @@ function switchBrowseMode(mode) {
     renderBrowseView();
 }
 
+function getFilteredJobs(jobs) {
+    if (!jobs || jobs.length === 0) return [];
+    const f = state.filters;
+    let result = jobs.filter(job => {
+        // Score filter
+        if (f.scoreMin > 0 && (job.match_score || 0) < f.scoreMin) return false;
+        // Remote type filter
+        if (f.remoteType !== 'all') {
+            const rt = (job.remote_type || '').toLowerCase();
+            if (f.remoteType === 'remote' && !rt.includes('remote')) return false;
+            if (f.remoteType === 'hybrid' && !rt.includes('hybrid')) return false;
+            if (f.remoteType === 'onsite' && !rt.includes('on-site') && !rt.includes('onsite') && !rt.includes('on site') && rt.includes('remote') === false && rt.includes('hybrid') === false && rt !== '') return false;
+            if (f.remoteType === 'onsite' && rt === '') return false;
+        }
+        // Salary minimum filter
+        if (f.salaryMin !== '' && f.salaryMin > 0) {
+            const jobSalary = job.salary_max || job.salary_min || 0;
+            if (jobSalary < f.salaryMin) return false;
+        }
+        // Keyword filter
+        if (f.keyword.trim()) {
+            const kw = f.keyword.toLowerCase();
+            const haystack = [job.title, job.company, job.description, job.location].filter(Boolean).join(' ').toLowerCase();
+            if (!haystack.includes(kw)) return false;
+        }
+        // Date posted filter
+        if (f.datePosted !== 'all' && job.posted_date) {
+            const posted = new Date(job.posted_date);
+            const now = new Date();
+            const diffDays = (now - posted) / (1000 * 60 * 60 * 24);
+            if (f.datePosted === '24h' && diffDays > 1) return false;
+            if (f.datePosted === '7d' && diffDays > 7) return false;
+            if (f.datePosted === '30d' && diffDays > 30) return false;
+        } else if (f.datePosted !== 'all' && !job.posted_date) {
+            return false; // No date info, exclude from date-filtered results
+        }
+        return true;
+    });
+    // Sort
+    result.sort((a, b) => {
+        let cmp = 0;
+        switch (f.sortBy) {
+            case 'score':
+                cmp = (a.match_score || 0) - (b.match_score || 0);
+                break;
+            case 'date':
+                const da = a.posted_date ? new Date(a.posted_date).getTime() : 0;
+                const db = b.posted_date ? new Date(b.posted_date).getTime() : 0;
+                cmp = da - db;
+                break;
+            case 'salary':
+                cmp = (a.salary_max || a.salary_min || 0) - (b.salary_max || b.salary_min || 0);
+                break;
+            case 'company':
+                cmp = (a.company || '').localeCompare(b.company || '');
+                break;
+        }
+        return f.sortDir === 'desc' ? -cmp : cmp;
+    });
+    return result;
+}
+
+function countActiveFilters() {
+    const f = state.filters;
+    let count = 0;
+    if (f.scoreMin > 0) count++;
+    if (f.remoteType !== 'all') count++;
+    if (f.salaryMin !== '' && f.salaryMin > 0) count++;
+    if (f.keyword.trim()) count++;
+    if (f.datePosted !== 'all') count++;
+    return count;
+}
+
+function clearFilters() {
+    state.filters.scoreMin = 0;
+    state.filters.remoteType = 'all';
+    state.filters.salaryMin = '';
+    state.filters.keyword = '';
+    state.filters.datePosted = 'all';
+    renderBrowseView();
+}
+
+let _filterDebounceTimer = null;
+let _filterFocusField = null;
+function updateFilter(key, value) {
+    state.filters[key] = value;
+    _filterFocusField = key === 'keyword' ? 'keyword' : (key === 'salaryMin' ? 'salary' : null);
+    if (key === 'keyword') {
+        clearTimeout(_filterDebounceTimer);
+        _filterDebounceTimer = setTimeout(() => renderBrowseView(), 200);
+    } else {
+        renderBrowseView();
+    }
+}
+
+function toggleSortDir() {
+    state.filters.sortDir = state.filters.sortDir === 'desc' ? 'asc' : 'desc';
+    renderBrowseView();
+}
+
+function toggleFiltersOpen() {
+    state.filters.filtersOpen = !state.filters.filtersOpen;
+    renderBrowseView();
+}
+
+function renderFilterBar(totalJobs, filteredCount) {
+    const bar = document.getElementById('job-filter-bar');
+    if (!bar) return;
+    const f = state.filters;
+    const activeCount = countActiveFilters();
+    const toggleLabel = f.filtersOpen ? 'Hide Filters' : 'Filters';
+    const badge = activeCount > 0 ? ` (${activeCount})` : '';
+
+    bar.innerHTML = `
+        <div class="filter-toggle-row">
+            <button class="filter-toggle-btn" onclick="toggleFiltersOpen()">
+                ${toggleLabel}${badge}
+                <span class="filter-chevron ${f.filtersOpen ? 'open' : ''}">&rsaquo;</span>
+            </button>
+            <span class="filter-count">${filteredCount} of ${totalJobs} jobs</span>
+            <div class="filter-sort-group">
+                <button class="filter-sort-btn ${f.sortBy==='score'?'active':''}" onclick="updateFilter('sortBy','score')">Score</button>
+                <button class="filter-sort-btn ${f.sortBy==='date'?'active':''}" onclick="updateFilter('sortBy','date')">Date</button>
+                <button class="filter-sort-btn ${f.sortBy==='salary'?'active':''}" onclick="updateFilter('sortBy','salary')">Salary</button>
+                <button class="filter-sort-btn ${f.sortBy==='company'?'active':''}" onclick="updateFilter('sortBy','company')">Company</button>
+                <button class="filter-sort-dir-btn" onclick="toggleSortDir()" title="Sort direction: ${f.sortDir}">
+                    ${f.sortDir === 'desc' ? '&#9660;' : '&#9650;'}
+                </button>
+            </div>
+        </div>
+        ${f.filtersOpen ? `
+        <div class="filter-fields-row">
+            <div class="filter-score-group">
+                <label class="filter-label">Score &ge;${f.scoreMin}</label>
+                <input type="range" class="filter-slider" min="0" max="100" value="${f.scoreMin}"
+                    oninput="document.querySelector('.filter-label').textContent='Score \\u2265'+this.value"
+                    onchange="updateFilter('scoreMin', parseInt(this.value))">
+            </div>
+            <select class="filter-select" onchange="updateFilter('remoteType', this.value)">
+                <option value="all" ${f.remoteType==='all'?'selected':''}>All Types</option>
+                <option value="remote" ${f.remoteType==='remote'?'selected':''}>Remote</option>
+                <option value="hybrid" ${f.remoteType==='hybrid'?'selected':''}>Hybrid</option>
+                <option value="onsite" ${f.remoteType==='onsite'?'selected':''}>On-site</option>
+            </select>
+            <input type="number" class="filter-search" placeholder="Min salary" value="${f.salaryMin}"
+                onchange="updateFilter('salaryMin', this.value ? parseInt(this.value) : '')" style="max-width:120px">
+            <input type="text" class="filter-search" placeholder="Keyword..." value="${f.keyword}"
+                oninput="updateFilter('keyword', this.value)">
+            <select class="filter-select" onchange="updateFilter('datePosted', this.value)">
+                <option value="all" ${f.datePosted==='all'?'selected':''}>Any Date</option>
+                <option value="24h" ${f.datePosted==='24h'?'selected':''}>Last 24h</option>
+                <option value="7d" ${f.datePosted==='7d'?'selected':''}>Last 7 days</option>
+                <option value="30d" ${f.datePosted==='30d'?'selected':''}>Last 30 days</option>
+            </select>
+            ${activeCount > 0 ? `<button class="filter-clear-btn" onclick="clearFilters()">Clear filters</button>` : ''}
+        </div>` : ''}
+    `;
+    bar.style.display = 'block';
+    // Restore focus to text inputs after re-render
+    if (_filterFocusField === 'keyword') {
+        const kwInput = bar.querySelector('input[type="text"]');
+        if (kwInput) { kwInput.focus(); kwInput.selectionStart = kwInput.selectionEnd = kwInput.value.length; }
+    } else if (_filterFocusField === 'salary') {
+        const salInput = bar.querySelector('input[type="number"]');
+        if (salInput) { salInput.focus(); }
+    }
+    _filterFocusField = null;
+}
+
 function renderBrowseView() {
     const listView = document.getElementById('job-list-view');
     const gridView = document.getElementById('job-grid-view');
@@ -798,13 +1054,15 @@ function renderBrowseView() {
 
     noProfile.style.display = 'none';
 
-    const jobs = state.swipeStack;
-    if (!jobs || jobs.length === 0) {
+    const allJobs = state.swipeStack;
+    const filterBar = document.getElementById('job-filter-bar');
+    if (!allJobs || allJobs.length === 0) {
         listView.style.display = 'none';
         gridView.style.display = 'none';
         feed.style.display = 'none';
         actionBar.style.display = 'none';
         toolbar.style.display = 'none';
+        if (filterBar) filterBar.style.display = 'none';
         // Show contextual empty state
         const stLevel = typeof getSpringTrainingLevel === 'function' ? getSpringTrainingLevel() : null;
         if (stLevel && stLevel.level !== 'the_show') {
@@ -827,9 +1085,26 @@ function renderBrowseView() {
         return;
     }
 
+    const jobs = getFilteredJobs(allJobs);
+
     empty.style.display = 'none';
     toolbar.style.display = 'flex';
-    countEl.textContent = `${jobs.length} jobs`;
+    countEl.textContent = `${jobs.length} of ${allJobs.length} jobs`;
+    renderFilterBar(allJobs.length, jobs.length);
+
+    if (jobs.length === 0) {
+        listView.style.display = 'none';
+        gridView.style.display = 'none';
+        feed.style.display = 'none';
+        actionBar.style.display = 'none';
+        empty.innerHTML = `
+            <div style="font-size:48px;margin-bottom:16px">&#x1F50E;</div>
+            <h2>No matches</h2>
+            <p>No jobs match your current filters. Try adjusting or clearing them.</p>
+            <button class="btn btn-secondary" onclick="clearFilters()">Clear Filters</button>`;
+        empty.style.display = 'block';
+        return;
+    }
 
     if (state.browseMode === 'list') {
         listView.style.display = 'block';
@@ -1658,6 +1933,43 @@ document.getElementById('btn-submit-answers').addEventListener('click', async ()
 
 // ── Applications List ───────────────────────────────────────────────────
 
+const PIPELINE_STAGES = [
+    { key: 'applied', label: 'Applied', color: '#5B9FD6' },
+    { key: 'screening', label: 'Screening', color: '#E5A030' },
+    { key: 'interview', label: 'Interview', color: '#C4962C' },
+    { key: 'offer', label: 'Offer', color: '#3DB87A' },
+    { key: 'accepted', label: 'Accepted', color: '#2ECC71' },
+    { key: 'rejected', label: 'Rejected', color: '#E05252' },
+    { key: 'no_response', label: 'No Response', color: '#888' },
+];
+
+async function updateAppPipelineStatus(appId, newStatus) {
+    try {
+        await api(`/applications/${appId}`, {
+            method: 'PUT',
+            body: { pipeline_status: newStatus },
+        });
+        toast(`Status updated to ${PIPELINE_STAGES.find(s => s.key === newStatus)?.label || newStatus}`, 'success');
+        loadApplications();
+    } catch (e) {
+        toast('Failed to update status: ' + e.message, 'error');
+    }
+}
+
+async function saveAppNotes(appId) {
+    const textarea = document.getElementById(`app-notes-${appId}`);
+    if (!textarea) return;
+    try {
+        await api(`/applications/${appId}`, {
+            method: 'PUT',
+            body: { notes: textarea.value },
+        });
+        toast('Notes saved', 'success');
+    } catch (e) {
+        toast('Failed to save notes: ' + e.message, 'error');
+    }
+}
+
 async function loadApplications() {
     if (!state.profileId) return;
     try {
@@ -1685,35 +1997,32 @@ async function loadApplications() {
             return;
         }
 
-        // Render diamond pipeline with counts
+        // Count pipeline stages and render stage bar
+        const stageCounts = {};
+        PIPELINE_STAGES.forEach(s => stageCounts[s.key] = 0);
+        apps.forEach(a => {
+            const ps = a.pipeline_status || 'applied';
+            if (stageCounts[ps] !== undefined) stageCounts[ps]++;
+            else stageCounts['applied']++;
+        });
+
         if (pipeline) {
-            const counts = { applied: 0, interview: 0, offer: 0, closed: 0 };
-            apps.forEach(a => {
-                if (a.status === 'completed') counts.applied++;
-                else if (a.status === 'interview') counts.interview++;
-                else if (a.status === 'offer') counts.offer++;
-                else if (a.status === 'failed' || a.status === 'hidden') counts.closed++;
-                else counts.applied++;
-            });
             pipeline.innerHTML = `
-                <svg width="220" height="140" viewBox="0 0 220 140" fill="none">
-                    <path d="M110 10 L190 70 L110 130 L30 70 Z" fill="none" stroke="#C4962C" stroke-width="0.8" opacity="0.25"/>
-                    <circle cx="110" cy="10" r="6" fill="#3DB87A" opacity="0.6"/>
-                    <circle cx="190" cy="70" r="6" fill="#E5A030" opacity="0.6"/>
-                    <circle cx="110" cy="130" r="6" fill="#5B9FD6" opacity="0.6"/>
-                    <circle cx="30" cy="70" r="6" fill="#E05252" opacity="0.4"/>
-                    <text x="110" y="-2" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#3DB87A" opacity="0.7">OFFER</text>
-                    <text x="110" y="6" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="11" font-weight="700" fill="#3DB87A" opacity="0.8">${counts.offer}</text>
-                    <text x="205" y="66" text-anchor="start" font-family="'JetBrains Mono',monospace" font-size="8" fill="#E5A030" opacity="0.7">INTERVIEW</text>
-                    <text x="205" y="78" text-anchor="start" font-family="'DM Sans',sans-serif" font-size="11" font-weight="700" fill="#E5A030" opacity="0.8">${counts.interview}</text>
-                    <text x="110" y="148" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="8" fill="#5B9FD6" opacity="0.7">APPLIED</text>
-                    <text x="110" y="156" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="11" font-weight="700" fill="#5B9FD6" opacity="0.8">${counts.applied}</text>
-                    <text x="15" y="66" text-anchor="end" font-family="'JetBrains Mono',monospace" font-size="8" fill="#E05252" opacity="0.5">CLOSED</text>
-                    <text x="15" y="78" text-anchor="end" font-family="'DM Sans',sans-serif" font-size="11" font-weight="700" fill="#E05252" opacity="0.6">${counts.closed}</text>
-                    <path d="M116 125 Q185 125 185 75" stroke="#5B9FD6" stroke-width="1.5" opacity="0.15" fill="none"/>
-                    <path d="M185 64 Q185 15 116 12" stroke="#E5A030" stroke-width="1.5" opacity="0.15" fill="none"/>
-                    <circle cx="110" cy="70" r="3" fill="#C4962C" opacity="0.3"/>
-                </svg>`;
+                <div style="display:flex;gap:4px;padding:12px 0;flex-wrap:wrap">
+                    ${PIPELINE_STAGES.map(s => `
+                        <div style="
+                            display:flex;align-items:center;gap:6px;padding:6px 12px;
+                            border-radius:20px;font-size:12px;font-weight:600;
+                            background:${stageCounts[s.key] > 0 ? s.color + '22' : 'var(--jb-bg-tertiary)'};
+                            color:${stageCounts[s.key] > 0 ? s.color : 'var(--jb-text-dim)'};
+                            border:1px solid ${stageCounts[s.key] > 0 ? s.color + '44' : 'var(--jb-border)'};
+                            ${stageCounts[s.key] > 0 ? '' : 'opacity:0.5;'}
+                        ">
+                            <span style="font-size:14px;font-weight:700">${stageCounts[s.key]}</span>
+                            ${s.label}
+                        </div>
+                    `).join('')}
+                </div>`;
         }
 
         // Email check banner + application list
@@ -1740,15 +2049,20 @@ function renderAppItem(a, isHidden = false) {
         'ready': 'Ready to Submit', 'completed': 'Submitted', 'failed': 'Failed', 'hidden': 'Hidden',
     };
     const statusLabel = statusLabels[a.status] || a.status.replace('_', ' ');
+    const pipelineStatus = a.pipeline_status || 'applied';
+    const pipelineStage = PIPELINE_STAGES.find(s => s.key === pipelineStatus) || PIPELINE_STAGES[0];
     return `
-    <div class="app-item" onclick="showAppDetail(${a.id})">
+    <div class="app-item" onclick="showAppDetail(${a.id})" style="position:relative">
         <div class="app-info">
             <h3>${esc(a.job_title)}</h3>
             <p>${esc(a.company)} ${a.applied_at ? '&middot; Applied ' + new Date(a.applied_at).toLocaleDateString() : ''}</p>
             ${a.status === 'ready' ? '<p style="color:var(--accent-light);font-size:12px">Application materials prepared - ready for submission</p>' : ''}
             ${a.status === 'failed' ? `<p style="color:var(--red);font-size:12px">${esc(a.error_message || 'Application failed')}</p>` : ''}
         </div>
-        <span class="app-status status-${a.status}">${statusLabel}</span>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            <span class="app-status status-${a.status}">${statusLabel}</span>
+            <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:${pipelineStage.color}22;color:${pipelineStage.color};border:1px solid ${pipelineStage.color}33">${pipelineStage.label}</span>
+        </div>
     </div>`;
 }
 
@@ -1869,6 +2183,35 @@ async function showAppDetail(appId) {
         actionsHtml += `<button class="btn btn-secondary" onclick="document.getElementById('app-detail-panel').remove()">✕ Close</button>`;
         actionsHtml += '</div>';
 
+        // Pipeline status dropdown
+        const currentPipeline = app.pipeline_status || 'applied';
+        const pipelineHtml = `
+            <div class="detail-section" style="padding:12px 0">
+                <h4>Pipeline Stage</h4>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+                    <select id="pipeline-select-${app.id}" onchange="updateAppPipelineStatus(${app.id}, this.value)" style="
+                        padding:6px 12px;border-radius:6px;font-size:13px;font-weight:500;
+                        background:var(--jb-bg-tertiary);color:var(--jb-text-1);border:1px solid var(--jb-border);
+                        cursor:pointer;outline:none;
+                    ">
+                        ${PIPELINE_STAGES.map(s => `<option value="${s.key}" ${s.key === currentPipeline ? 'selected' : ''}>${s.label}</option>`).join('')}
+                    </select>
+                    <span style="font-size:11px;color:var(--jb-text-dim)">Update pipeline stage</span>
+                </div>
+            </div>`;
+
+        // Notes section
+        const notesHtml = `
+            <div class="detail-section" style="padding:12px 0">
+                <h4>Notes</h4>
+                <textarea id="app-notes-${app.id}" placeholder="Add notes about this application..." rows="3" style="
+                    width:100%;padding:8px 12px;border-radius:6px;font-size:13px;
+                    background:var(--jb-bg-tertiary);color:var(--jb-text-1);border:1px solid var(--jb-border);
+                    resize:vertical;font-family:inherit;margin-top:6px;
+                ">${esc(app.notes || '')}</textarea>
+                <button class="btn btn-sm btn-secondary" onclick="saveAppNotes(${app.id})" style="margin-top:6px">Save Notes</button>
+            </div>`;
+
         panel.innerHTML = `
             <div class="detail-header">
                 <div>
@@ -1877,7 +2220,9 @@ async function showAppDetail(appId) {
                 </div>
                 <span class="app-status status-${app.status}">${statusLabels[app.status] || app.status}</span>
             </div>
+            ${pipelineHtml}
             ${timelineHtml}
+            ${notesHtml}
             ${coverLetterHtml}
             ${questionsHtml}
             ${errorHtml}
@@ -3340,6 +3685,7 @@ async function loadShortlist() {
                                 job.match_score >= 40 ? 'var(--orange)' : 'var(--red)';
             const bd = job.match_breakdown;
 
+            const hasNotes = job.user_notes && job.user_notes.trim();
             html += `<div class="shortlist-card" data-job-id="${job.id}">
                 <div class="sl-header">
                     <div class="sl-score" style="color:${scoreColor}">${Math.round(job.match_score)}</div>
@@ -3350,6 +3696,22 @@ async function loadShortlist() {
                 </div>
                 ${job.ai_synthesis ? `<div class="sl-synthesis">${esc(job.ai_synthesis)}</div>` : ''}
                 ${job.salary_text ? `<div class="sl-salary">${esc(job.salary_text)}</div>` : ''}
+                <div class="sl-notes-toggle" onclick="event.stopPropagation(); toggleJobNotes(${job.id})" style="
+                    font-size:12px;color:var(--jb-text-dim);cursor:pointer;padding:4px 0;
+                    display:flex;align-items:center;gap:4px;
+                ">
+                    <span id="job-notes-arrow-${job.id}" style="font-size:10px;transition:transform 0.2s;${hasNotes ? 'transform:rotate(90deg)' : ''}">${hasNotes ? '&#9654;' : '&#9654;'}</span>
+                    ${hasNotes ? 'Notes' : 'Add Notes'}
+                    ${hasNotes ? '<span style="width:6px;height:6px;border-radius:50%;background:var(--jb-bright);display:inline-block"></span>' : ''}
+                </div>
+                <div id="job-notes-section-${job.id}" style="display:${hasNotes ? 'block' : 'none'}">
+                    <textarea id="job-notes-${job.id}" placeholder="Your notes about this job..." rows="2" onclick="event.stopPropagation()" style="
+                        width:100%;padding:8px 10px;border-radius:6px;font-size:12px;
+                        background:var(--jb-bg-tertiary);color:var(--jb-text-1);border:1px solid var(--jb-border);
+                        resize:vertical;font-family:inherit;margin-top:4px;
+                    ">${esc(job.user_notes || '')}</textarea>
+                    <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); saveJobNotes(${job.id})" style="margin-top:4px;font-size:11px">Save</button>
+                </div>
                 <div class="sl-actions">
                     <button class="btn btn-sm btn-primary" onclick="applyFromShortlist(${job.id})">Apply</button>
                     ${!job.deep_researched ? `<button class="btn btn-sm btn-secondary" onclick="triggerDeepResearch(${job.id})" id="deep-research-btn-${job.id}">🔬 Research</button>` : '<span class="sl-researched">🔬 Researched</span>'}
@@ -3392,6 +3754,33 @@ async function removeFromShortlist(jobId) {
         loadStats();
     } catch (e) {
         toast('Failed: ' + e.message, 'error');
+    }
+}
+
+function toggleJobNotes(jobId) {
+    const section = document.getElementById(`job-notes-section-${jobId}`);
+    const arrow = document.getElementById(`job-notes-arrow-${jobId}`);
+    if (!section) return;
+    if (section.style.display === 'none') {
+        section.style.display = 'block';
+        if (arrow) arrow.style.transform = 'rotate(90deg)';
+    } else {
+        section.style.display = 'none';
+        if (arrow) arrow.style.transform = '';
+    }
+}
+
+async function saveJobNotes(jobId) {
+    const textarea = document.getElementById(`job-notes-${jobId}`);
+    if (!textarea) return;
+    try {
+        await api(`/jobs/${jobId}/notes`, {
+            method: 'PUT',
+            body: { user_notes: textarea.value },
+        });
+        toast('Notes saved', 'success');
+    } catch (e) {
+        toast('Failed to save notes: ' + e.message, 'error');
     }
 }
 
@@ -3825,6 +4214,10 @@ window.applyArraySuggestion = applyArraySuggestion;
 
 // Expose for inline onclick handlers
 window.showView = showView;
+window.updateFilter = updateFilter;
+window.toggleSortDir = toggleSortDir;
+window.toggleFiltersOpen = toggleFiltersOpen;
+window.clearFilters = clearFilters;
 window.showAppDetail = showAppDetail;
 window.rescoreJobs = rescoreJobs;
 window.reanalyzeProfile = reanalyzeProfile;
@@ -3838,6 +4231,8 @@ window.hideApplication = hideApplication;
 window.unhideApplication = unhideApplication;
 window.viewAutomationPlan = viewAutomationPlan;
 window.toggleHiddenApps = toggleHiddenApps;
+window.updateAppPipelineStatus = updateAppPipelineStatus;
+window.saveAppNotes = saveAppNotes;
 window.generateInterviewQuestions = generateInterviewQuestions;
 window.submitInterviewAnswer = submitInterviewAnswer;
 window.toggleAnswered = toggleAnswered;
@@ -3851,6 +4246,8 @@ window.switchSummaryTab = switchSummaryTab;
 window.loadShortlist = loadShortlist;
 window.applyFromShortlist = applyFromShortlist;
 window.removeFromShortlist = removeFromShortlist;
+window.toggleJobNotes = toggleJobNotes;
+window.saveJobNotes = saveJobNotes;
 window.loadSearchAdvisor = loadSearchAdvisor;
 window.acceptSuggestion = acceptSuggestion;
 window.checkApplicationEmails = checkApplicationEmails;
@@ -5358,6 +5755,63 @@ async function saveReporterAnswer() {
     const answer = taEl ? taEl.value.trim() : '';
     if (!answer) { toast('Type your answer first', 'warning'); return; }
     await _saveReporterValue(answer);
+}
+
+// ── Coach's Note ────────────────────────────────────────────────────────
+
+function loadCoachNote() {
+    const el = document.getElementById('dugout-coach-note');
+    if (!el) return;
+
+    const p = state.profile;
+    let message = '';
+
+    if (!p) {
+        message = 'Create a profile to get started with your job search journey.';
+    } else if (!p.has_resume_text && !p.resume_uploaded) {
+        message = 'Upload your resume to unlock AI-powered job matching and scoring.';
+    } else {
+        // Calculate profile completeness
+        const fields = [p.name, p.email, p.location, p.seniority_level, p.min_salary,
+            p.remote_preference, p.industry_preference];
+        const targetFields = [(p.target_roles || []).length > 0, (p.target_locations || []).length > 0];
+        const filledCount = [...fields, ...targetFields].filter(Boolean).length;
+        const totalFields = fields.length + targetFields.length;
+        const completeness = Math.round((filledCount / totalFields) * 100);
+
+        if (completeness < 50) {
+            message = 'Answering Reporter Corner questions will sharpen your job matches. Your profile is ' + completeness + '% complete.';
+        } else if (!state.jobs || state.jobs.length === 0) {
+            message = 'Your profile is looking good! Hit Search Jobs in Scouting to find opportunities.';
+        } else {
+            const shortlisted = (state.jobs || []).filter(j => j.status === 'shortlisted').length;
+            const applied = (state.jobs || []).filter(j => j.status === 'liked' || j.status === 'applied').length;
+            if (shortlisted === 0 && applied === 0) {
+                message = 'Review your search results and shortlist jobs that interest you.';
+            } else if (shortlisted > 0 && applied === 0) {
+                message = 'You have ' + shortlisted + ' shortlisted job' + (shortlisted !== 1 ? 's' : '') + '. Ready to start applying?';
+            } else if (applied > 0) {
+                message = 'You\'ve applied to ' + applied + ' job' + (applied !== 1 ? 's' : '') + '. Keep the momentum going!';
+            } else {
+                message = 'Keep building your profile and searching for opportunities.';
+            }
+        }
+    }
+
+    el.style.display = 'block';
+    el.innerHTML = `
+        <div style="
+            display:flex;align-items:flex-start;gap:12px;padding:16px;
+            background:linear-gradient(135deg, #1a2744 0%, #1d2d5c 100%);
+            border-radius:10px;border:1px solid rgba(74,144,217,0.2);
+            margin-bottom:8px;
+        ">
+            <div style="font-size:28px;flex-shrink:0;line-height:1">&#x1F9E2;</div>
+            <div>
+                <div style="font-size:11px;font-weight:700;color:#4A90D9;letter-spacing:1px;margin-bottom:4px">COACH'S NOTE</div>
+                <div style="font-size:14px;color:var(--jb-text-1);line-height:1.5">${esc(message)}</div>
+            </div>
+        </div>`;
 }
 
 // ── Dugout Helpers (called from showView) ───────────────────────────────

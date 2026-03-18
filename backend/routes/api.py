@@ -8,7 +8,7 @@ import shutil
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -294,55 +294,89 @@ async def parse_profile_text(data: ProfilePasteInput):
         raise HTTPException(400, "No text provided")
 
     if get_provider() != "none":
-        prompt = f"""You are a career data extraction expert. Parse this candidate profile document into structured JSON.
+        prompt = f"""You are a career data extraction expert. Parse this candidate profile/resume into structured JSON.
 
-CRITICAL RULES FOR EACH FIELD:
-- **target_roles**: Extract EXACT job titles the candidate is targeting. These must be real, searchable job titles
-  (e.g. "Director, Information Security" NOT "Director-level security roles"). Include title variations
-  (e.g. both "CISO" and "Chief Information Security Officer"). Also generate GRANULAR individual titles
-  from compound roles — e.g. "Director, IT Operations & Cybersecurity" should produce BOTH
-  "Director, IT Operations" AND "Director, Cybersecurity" as separate entries. Include shorter
-  variations too like "Cybersecurity Director", "IT Security Director". Max 12 titles.
-- **target_locations**: Extract specific geographic locations (city, province/state, country).
-  Include variations like "Toronto, ON" and "GTA". If remote is mentioned, include "Remote" as a location too.
-- **skills**: Extract MARKET-STANDARD skill terms that would appear in job postings.
-  GOOD: "Risk Management", "Cloud Security", "ISO 27001", "NIST CSF", "Incident Response", "Python", "AWS"
-  BAD: "building security programs" (too vague), "strong communicator" (soft skill phrase), "team player" (cliché)
-  Each skill should be 1-4 words, a noun/noun-phrase that a recruiter would search for. Max 20 skills.
-  Include frameworks, certifications, tools, methodologies, and domain expertise.
-- **seniority_level**: Based on the candidate's ACTUAL career level (not aspirational).
-  Must be exactly one of: entry, mid, senior, director, vp, c-suite
-- **experience_years**: Total years of professional experience (integer). Count from first relevant role.
-- **min_salary / max_salary**: Extract as integers (no currency symbols, no commas). If only one number given, use it for both.
-- **remote_preference**: Must be exactly one of: remote, hybrid, onsite, any
-- **cover_letter_template**: Extract any instructions about tone, style, or approach for cover letters.
+EXTRACTION STRATEGY — follow these steps carefully:
+1. **name**: Look at the VERY FIRST LINE of the document — resumes almost always start with the candidate's name in large/bold text. If the first line looks like a name (1-4 words, capitalized), use it. Also check for "Name:" labels.
+2. **email**: Search the entire document for an email pattern (word@domain.tld). Often near the top, in a header/contact section.
+3. **phone**: Search for phone number patterns anywhere in the document. Formats: (555) 123-4567, 555-123-4567, +1 555 123 4567, etc.
+4. **location**: Look for city/state patterns near the top of the document. Common formats: "City, ST", "City, State", "City, Province", "City, ST ZIP". Also check for "Location:", "Address:" labels. Extract just "City, ST" or "City, Province" format.
+5. **target_roles**: Extract from RECENT job titles (last 2-3 positions). These must be real, searchable job titles (e.g. "Director, Information Security" NOT "Director-level security roles"). Include title variations (e.g. both "CISO" and "Chief Information Security Officer"). Generate GRANULAR individual titles from compound roles — e.g. "Director, IT Operations & Cybersecurity" should produce BOTH "Director, IT Operations" AND "Director, Cybersecurity". Also check for any "Objective" or "Target" section. Max 12 titles.
+6. **target_locations**: Extract specific geographic locations. Include variations like "Toronto, ON" and "GTA". If remote is mentioned, include "Remote". Check address, summary, and preferences sections.
+7. **skills**: Extract from BOTH a dedicated "Skills" section AND from bullet points in job descriptions. Use MARKET-STANDARD skill terms that appear in job postings. GOOD: "Risk Management", "Python", "AWS", "ISO 27001". BAD: "building security programs" (too vague), "team player" (cliché). Each skill 1-4 words. Max 20 skills. Include frameworks, certifications, tools, methodologies.
+8. **seniority_level**: Based on ACTUAL career level from most recent roles. Must be exactly one of: entry, mid, senior, director, vp, c-suite
+9. **experience_years**: Total years of professional experience (integer). Count from earliest role date to present.
+10. **min_salary / max_salary**: Extract as integers if mentioned. If only one number, use it for both.
+11. **remote_preference**: Must be exactly one of: remote, hybrid, onsite, any
+12. **cover_letter_template**: Extract any instructions about tone, style, or approach for cover letters.
 
-Return ONLY valid JSON:
+CRITICAL: If you truly cannot find a field, set its value to null — do NOT use strings like "Not found", "Unknown", or "N/A".
+
+Return ONLY valid JSON with confidence scores (0.0-1.0) per field:
 {{
     "name": "full name",
-    "email": "email address",
-    "phone": "phone number",
-    "location": "city, province/state",
-    "target_roles": ["Chief Information Security Officer", "CISO", "VP Information Security"],
-    "target_locations": ["Toronto, ON", "GTA", "Ontario", "Remote"],
+    "name_confidence": 0.95,
+    "email": "email@example.com",
+    "email_confidence": 0.99,
+    "phone": "555-123-4567",
+    "phone_confidence": 0.9,
+    "location": "City, ST",
+    "location_confidence": 0.85,
+    "target_roles": ["Senior Software Engineer", "Staff Engineer", "Tech Lead"],
+    "target_roles_confidence": 0.8,
+    "target_locations": ["Toronto, ON", "Remote"],
+    "target_locations_confidence": 0.7,
     "min_salary": 165000,
     "max_salary": 200000,
     "remote_preference": "any",
     "experience_years": 15,
-    "skills": ["Risk Management", "Cloud Security", "ISO 27001", "Incident Response"],
-    "seniority_level": "director",
-    "cover_letter_template": "professional, confident tone..."
+    "skills": ["Python", "AWS", "Kubernetes", "System Design"],
+    "skills_confidence": 0.85,
+    "seniority_level": "senior",
+    "cover_letter_template": null
 }}
 
 DOCUMENT:
 {text[:6000]}"""
         parsed = await ai_generate_json(prompt, max_tokens=1500, model_tier="fast")
         if parsed:
+            parsed = _sanitize_parsed_fields(parsed)
+            # Fallback: fill gaps with regex extraction
+            regex_parsed = _regex_parse_profile(text)
+            for key in ["name", "email", "phone", "location"]:
+                if not parsed.get(key) and regex_parsed.get(key):
+                    parsed[key] = regex_parsed[key]
+                    parsed[f"{key}_confidence"] = 0.5  # regex fallback confidence
+            for key in ["target_roles", "target_locations", "skills"]:
+                if not parsed.get(key) and regex_parsed.get(key):
+                    parsed[key] = regex_parsed[key]
+                    parsed[f"{key}_confidence"] = 0.4
+            for key in ["min_salary", "max_salary", "experience_years"]:
+                if parsed.get(key) is None and regex_parsed.get(key) is not None:
+                    parsed[key] = regex_parsed[key]
             parsed["raw_profile_doc"] = text
             return parsed
 
     parsed = _regex_parse_profile(text)
     parsed["raw_profile_doc"] = text
+    return parsed
+
+
+def _sanitize_parsed_fields(parsed: dict) -> dict:
+    """Strip 'Not found', 'Unknown', 'N/A', empty strings from parsed AI output.
+    Convert them to null so the frontend knows no real value was extracted."""
+    _empty_values = {"not found", "unknown", "n/a", "none", "null", ""}
+    string_fields = ["name", "email", "phone", "location", "remote_preference",
+                     "cover_letter_template", "seniority_level"]
+    for key in string_fields:
+        val = parsed.get(key)
+        if isinstance(val, str) and val.strip().lower() in _empty_values:
+            parsed[key] = None
+    list_fields = ["target_roles", "target_locations", "skills"]
+    for key in list_fields:
+        val = parsed.get(key)
+        if isinstance(val, list):
+            parsed[key] = [v for v in val if isinstance(v, str) and v.strip().lower() not in _empty_values]
     return parsed
 
 
@@ -361,21 +395,46 @@ def _regex_parse_profile(text: str) -> dict:
         "skills": [], "cover_letter_template": "",
     }
 
+    # Name: try labeled field first, then fall back to first non-empty line
     name_match = re.search(r"(?:Full\s*Name|Name)\s*[:\s]\s*([^\n]+)", text, re.I)
     if name_match:
         result["name"] = clean(name_match.group(1))
+    else:
+        # First line heuristic: resumes typically start with the person's name
+        lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
+        if lines:
+            first_line = re.sub(r"^[#*_\-]+\s*", "", lines[0]).strip()
+            # Looks like a name: 1-4 words, mostly alpha, no common non-name patterns
+            words = first_line.split()
+            if 1 <= len(words) <= 4 and len(first_line) < 60 and not re.search(r"@|http|resume|curriculum|objective|summary|experience", first_line, re.I):
+                if all(re.match(r"[A-Za-z\.\'\-]+$", w) for w in words):
+                    result["name"] = first_line
 
+    # Email: search anywhere in document
     email_match = re.search(r"[\w.-]+@[\w.-]+\.\w+", text)
     if email_match:
         result["email"] = email_match.group()
 
-    phone_match = re.search(r"(?:Phone|Tel)\s*[:\s]\s*([\d][\d\-() .+]{6,}[\d])", text, re.I)
+    # Phone: try labeled field first, then any phone-like pattern
+    phone_match = re.search(r"(?:Phone|Tel|Cell|Mobile|Contact)\s*[:\s]\s*([\d][\d\-() .+]{6,}[\d])", text, re.I)
+    if not phone_match:
+        # Standalone phone pattern: +1 (555) 123-4567, 555.123.4567, etc.
+        phone_match = re.search(r"(?<!\d)(\+?1?\s*[\(\-]?\d{3}[\)\-.\s]+\d{3}[\-.\s]+\d{4})(?!\d)", text)
     if phone_match:
         result["phone"] = phone_match.group(1).strip()
 
+    # Location: try labeled field first, then "City, ST" / "City, Province" patterns
     loc_match = re.search(r"(?:Address|Location|City)\s*[:\s]\s*([^\n]+)", text, re.I)
     if loc_match:
         result["location"] = clean(loc_match.group(1))
+    else:
+        # "City, ST" or "City, ST ZIP" pattern (US/CA)
+        loc_pattern = re.search(
+            r"([A-Z][a-zA-Z\s]+,\s*(?:[A-Z]{2}|Ontario|Quebec|Alberta|British Columbia|Manitoba|Saskatchewan|Nova Scotia)(?:\s+\w\d\w\s?\d\w\d|\s+\d{5})?)",
+            text
+        )
+        if loc_pattern:
+            result["location"] = loc_pattern.group(1).strip()
 
     sal_match = re.search(r"\$\s*([\d,]{4,})\s*[-–]\s*\$?\s*([\d,]{4,})", text)
     if sal_match:
@@ -1277,6 +1336,33 @@ def list_hidden_applications(profile_id: int, db: Session = Depends(get_db)):
         Application.status == "hidden",
     ).all()
     return [_application_dict(a) for a in apps]
+
+
+@router.put("/applications/{app_id}")
+async def update_application(app_id: int, data: dict = Body(...), db: Session = Depends(get_db)):
+    """Update an application's pipeline status and/or notes."""
+    application = db.query(Application).filter(Application.id == app_id).first()
+    if not application:
+        raise HTTPException(404, "Application not found")
+    valid_pipeline_statuses = {"applied", "screening", "interview", "offer", "accepted", "rejected", "no_response"}
+    if "pipeline_status" in data and data["pipeline_status"] in valid_pipeline_statuses:
+        application.pipeline_status = data["pipeline_status"]
+    if "notes" in data:
+        application.notes = data["notes"]
+    db.commit()
+    return _application_dict(application)
+
+
+@router.put("/jobs/{job_id}/notes")
+async def update_job_notes(job_id: int, data: dict = Body(...), db: Session = Depends(get_db)):
+    """Update user notes on a job."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if "user_notes" in data:
+        job.user_notes = data["user_notes"]
+    db.commit()
+    return {"status": "updated", "user_notes": job.user_notes}
 
 
 @router.post("/applications/{app_id}/submit")
@@ -3195,6 +3281,8 @@ def _job_dict(j: Job, db: Session = None) -> dict:
         "research_sources": json.loads(j.research_sources or "[]") if j.research_sources else [],
         # AI synthesis: compact one-liner from deep research for card display
         "ai_synthesis": _build_ai_synthesis(j) if (j.deep_researched) else None,
+        # User notes
+        "user_notes": getattr(j, 'user_notes', None) or "",
     }
 
 
@@ -3224,9 +3312,11 @@ def _application_dict(a: Application) -> dict:
         "job_title": a.job.title if a.job else "",
         "company": a.job.company if a.job else "",
         "status": a.status,
+        "pipeline_status": getattr(a, 'pipeline_status', None) or "applied",
         "cover_letter": a.cover_letter,
         "agent_log": json.loads(a.agent_log or "[]"),
         "error_message": a.error_message,
+        "notes": getattr(a, 'notes', None) or "",
         "applied_at": a.applied_at.isoformat() if a.applied_at else None,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
