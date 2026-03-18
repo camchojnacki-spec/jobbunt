@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260317c">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260318a">
     <script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
@@ -165,17 +165,17 @@
                         </div>
                     </div>
 
-                    <!-- Scouting Report + Reporter Corner Grid -->
+                    <!-- Spring Training + Reporter Corner Grid -->
                     <div class="dugout-grid">
-                        <!-- Scouting Report -->
-                        <div class="dugout-card dugout-scouting-report" id="dugout-scouting-report">
-                            <div class="dugout-card-label">SCOUTING REPORT</div>
-                            <div class="dugout-card-title">Pre-game Checklist</div>
-                            <div class="scouting-report-progress">
-                                <div class="scouting-report-progress-bar" id="scouting-progress-bar" style="width:0%"></div>
+                        <!-- Spring Training Progression -->
+                        <div class="dugout-card dugout-spring-training" id="dugout-spring-training">
+                            <div class="dugout-card-label">SPRING TRAINING</div>
+                            <div class="dugout-card-title" id="spring-training-title">Road to The Show</div>
+                            <div class="spring-training-progress">
+                                <div class="spring-training-progress-bar" id="spring-training-progress-bar" style="width:0%"></div>
                             </div>
-                            <div class="scouting-report-pct" id="scouting-progress-pct">0% complete</div>
-                            <div class="scouting-checklist" id="scouting-checklist">
+                            <div class="spring-training-pct" id="spring-training-pct">Rookie Ball</div>
+                            <div class="spring-training-levels" id="spring-training-levels">
                                 <!-- Populated by JS -->
                             </div>
                         </div>
@@ -932,6 +932,27 @@
                         </p>
                     </div>
 
+                    <!-- AI Model Configuration -->
+                    <div class="settings-section">
+                        <h3>AI Model Configuration</h3>
+                        <p>Configure which AI models are used for each feature category.</p>
+                        <div id="model-config-container">
+                            <div style="color:var(--text-dim);font-size:13px;padding:12px 0">Loading model configuration...</div>
+                        </div>
+                    </div>
+
+                    <!-- Prompt Lab -->
+                    <div class="settings-section" style="border-color: var(--accent)">
+                        <h3 style="display:flex;align-items:center;gap:8px">
+                            Prompt Lab
+                            <span style="font-size:10px;padding:2px 8px;background:var(--accent);color:#000;border-radius:10px;font-weight:600;letter-spacing:0.5px">POWER USER</span>
+                        </h3>
+                        <p>View, edit, and enhance all AI prompts used across the platform. Changes are stored in memory and reset on server restart.</p>
+                        <div id="prompt-lab-container">
+                            <div style="color:var(--text-dim);font-size:13px;padding:12px 0">Loading prompts...</div>
+                        </div>
+                    </div>
+
                     <!-- Application Testing -->
                     <div class="settings-section">
                         <h3>Application Testing</h3>
@@ -1083,6 +1104,6 @@
         <div class="toast-container" id="toast-container"></div>
     </div>
 
-    <script src="/static/js/app.js?v=20260317b"></script>
+    <script src="/static/js/app.js?v=20260318a"></script>
 </body>
 </html>

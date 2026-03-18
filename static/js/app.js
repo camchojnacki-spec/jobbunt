@@ -126,16 +126,28 @@ function showView(name) {
         if (typeof loadStats === 'function') loadStats();
         if (typeof loadDugoutReadiness === 'function') loadDugoutReadiness();
         if (typeof loadDugoutSeasonStats === 'function') loadDugoutSeasonStats();
-        if (typeof loadScoutingReport === 'function') loadScoutingReport();
+        if (typeof loadSpringTraining === 'function') loadSpringTraining();
         if (typeof loadReporterCorner === 'function') loadReporterCorner();
         if (typeof loadDugoutCharts === 'function') loadDugoutCharts();
     }
-    if (name === 'hunt') loadSwipeStack();
+    if (name === 'hunt') {
+        loadSwipeStack();
+        // Re-apply Spring Training gating to search buttons
+        if (typeof getSpringTrainingLevel === 'function') {
+            const st = getSpringTrainingLevel();
+            applyFeatureGating(st.level, st.index);
+        }
+    }
     if (name === 'pipeline') {
         if (typeof loadPipelineData === 'function') loadPipelineData();
     }
     if (name === 'intel') {
         if (typeof loadIntelData === 'function') loadIntelData();
+        // Re-apply Spring Training gating to Bullpen AI buttons
+        if (typeof getSpringTrainingLevel === 'function') {
+            const st = getSpringTrainingLevel();
+            applyFeatureGating(st.level, st.index);
+        }
     }
     if (name === 'profile') {
         if (state.profile) populateProfileForm(state.profile);
@@ -413,6 +425,8 @@ async function saveProfile() {
 
         document.getElementById('no-profile-state').style.display = 'none';
         updateNavAvatar();
+        // Refresh Spring Training after profile save
+        if (typeof loadSpringTraining === 'function') loadSpringTraining();
         try { const ps = await api('/profiles'); populateProfileDropdown(ps); } catch(e) { /* ok */ }
     } catch (e) {
         toast('Failed to save profile: ' + e.message, 'error');
@@ -421,6 +435,13 @@ async function saveProfile() {
 
 async function searchJobs() {
     if (!state.profileId) { toast('Create a profile first', 'error'); return; }
+    // Spring Training gate
+    const stLevel = getSpringTrainingLevel();
+    if (stLevel.level !== 'the_show') {
+        toast('Complete Spring Training to unlock search! Current level: ' + SPRING_TRAINING_LEVELS[stLevel.index].name, 'warning');
+        showView('dugout');
+        return;
+    }
     if (state.searching) return; // Prevent double-click
 
     state.searching = true;
@@ -2397,6 +2418,228 @@ async function loadSettings() {
             ).join('')}
         `;
     }
+
+    // Load Prompt Lab and Model Config
+    loadModelConfig();
+    loadPromptLab();
+}
+
+// ── Prompt Lab ──────────────────────────────────────────────────────────
+
+const TIER_LABELS = { flash: 'Flash', balanced: 'Balanced', deep: 'Deep' };
+const TIER_COLORS = { flash: '#4ade80', balanced: '#60a5fa', deep: '#c084fc' };
+const CAT_ICONS = { search: 'search', scoring: 'analytics', applications: 'description', profile: 'person', intelligence: 'psychology' };
+
+async function loadModelConfig() {
+    const container = document.getElementById('model-config-container');
+    if (!container) return;
+    try {
+        const config = await api('/config/models');
+        const p = config.provider;
+        const providerLabel = p === 'anthropic' ? 'Claude (Anthropic)' : p === 'gemini' ? 'Gemini (Google)' : 'None';
+
+        let html = `<div style="margin-bottom:16px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                <span style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">Active Provider:</span>
+                <span style="font-size:13px;font-weight:600;color:var(--text-bright)">${providerLabel}</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Model Tiers</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">`;
+        for (const tier of ['flash', 'balanced', 'deep']) {
+            const info = config.tiers[tier];
+            html += `<div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center">
+                <div style="font-size:11px;font-weight:600;color:${TIER_COLORS[tier]};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">${TIER_LABELS[tier]}</div>
+                <div style="font-size:12px;color:var(--text-bright);word-break:break-all">${info.active || 'N/A'}</div>
+            </div>`;
+        }
+        html += `</div></div>`;
+
+        // Per-feature tier overrides
+        const overrides = config.feature_overrides;
+        const overrideKeys = Object.keys(overrides);
+        if (overrideKeys.length > 0) {
+            const activeOverrides = overrideKeys.filter(k => overrides[k].override_tier);
+            html += `<div style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin:12px 0 8px">Feature Tier Overrides <span style="color:var(--text-muted)">(${activeOverrides.length} active)</span></div>`;
+            if (activeOverrides.length > 0) {
+                html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">`;
+                for (const k of activeOverrides) {
+                    const ov = overrides[k];
+                    html += `<span style="font-size:11px;padding:3px 8px;background:${TIER_COLORS[ov.override_tier]}22;color:${TIER_COLORS[ov.override_tier]};border:1px solid ${TIER_COLORS[ov.override_tier]}44;border-radius:4px">${k}: ${ov.default_tier} &rarr; ${ov.override_tier} <a href="#" onclick="event.preventDefault();clearModelOverride('${k}')" style="color:var(--red);margin-left:4px" title="Clear override">&times;</a></span>`;
+                }
+                html += `</div>`;
+            }
+            html += `<p style="font-size:11px;color:var(--text-muted);margin-top:4px">Set per-feature overrides from the Prompt Lab below using the tier dropdown on each prompt.</p>`;
+        }
+
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = `<div style="color:var(--red);font-size:13px">Failed to load model config: ${e.message}</div>`;
+    }
+}
+
+async function loadPromptLab() {
+    const container = document.getElementById('prompt-lab-container');
+    if (!container) return;
+    try {
+        const grouped = await api('/config/prompts');
+        let html = '';
+
+        for (const [catKey, catData] of Object.entries(grouped)) {
+            if (!catData.prompts || catData.prompts.length === 0) continue;
+            html += `<div class="prompt-lab-category" style="margin-bottom:16px">
+                <div onclick="this.parentElement.classList.toggle('collapsed')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+                    <span style="font-size:14px;color:var(--text-bright);font-weight:600;flex:1">${catData.label}</span>
+                    <span style="font-size:11px;color:var(--text-muted)">${catData.prompts.length} prompts</span>
+                    <span style="color:var(--text-dim);font-size:16px;transition:transform 0.2s" class="prompt-cat-arrow">&#9662;</span>
+                </div>
+                <div class="prompt-cat-items" style="margin-top:8px">`;
+
+            for (const p of catData.prompts) {
+                const tierColor = TIER_COLORS[p.model_tier] || '#888';
+                const modifiedBadge = p.is_modified ? '<span style="font-size:9px;padding:1px 6px;background:var(--orange,#f59e0b);color:#000;border-radius:4px;font-weight:600;margin-left:6px">MODIFIED</span>' : '';
+                const overrideBadge = p.model_tier_override ? `<span style="font-size:9px;padding:1px 6px;background:${TIER_COLORS[p.model_tier_override]}33;color:${TIER_COLORS[p.model_tier_override]};border-radius:4px;margin-left:4px">OVERRIDE: ${p.model_tier_override}</span>` : '';
+
+                html += `<div class="prompt-lab-item" id="prompt-item-${p.key}" style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <span style="font-size:13px;font-weight:600;color:var(--text-bright);flex:1;min-width:200px">${p.name}${modifiedBadge}</span>
+                        <span style="font-size:10px;padding:2px 8px;background:${tierColor}22;color:${tierColor};border-radius:4px;font-weight:600">${TIER_LABELS[p.model_tier] || p.model_tier}</span>
+                        ${overrideBadge}
+                        <span style="font-size:10px;color:var(--text-muted)">${p.file}:${p.function}</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-dim);margin-top:4px">${p.description}</div>
+                    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+                        <button class="btn btn-secondary btn-sm" onclick="togglePromptEdit('${p.key}')" style="font-size:11px;padding:3px 10px">View / Edit</button>
+                        <button class="btn btn-secondary btn-sm" onclick="enhancePrompt('${p.key}')" style="font-size:11px;padding:3px 10px">Enhance with AI</button>
+                        ${p.is_modified ? `<button class="btn btn-secondary btn-sm" onclick="resetPrompt('${p.key}')" style="font-size:11px;padding:3px 10px;color:var(--red)">Reset</button>` : ''}
+                        <select onchange="saveModelOverride('${p.key}', this.value)" style="font-size:11px;padding:3px 8px;background:var(--card-bg);color:var(--text-dim);border:1px solid var(--border);border-radius:4px;cursor:pointer" title="Override model tier">
+                            <option value="" ${!p.model_tier_override ? 'selected' : ''}>Tier: Default (${TIER_LABELS[p.model_tier]})</option>
+                            <option value="flash" ${p.model_tier_override === 'flash' ? 'selected' : ''}>Tier: Flash</option>
+                            <option value="balanced" ${p.model_tier_override === 'balanced' ? 'selected' : ''}>Tier: Balanced</option>
+                            <option value="deep" ${p.model_tier_override === 'deep' ? 'selected' : ''}>Tier: Deep</option>
+                        </select>
+                    </div>
+                    <div id="prompt-edit-${p.key}" style="display:none;margin-top:12px">
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Variables: ${(p.variables || []).map(v => '<code style="background:var(--surface);padding:1px 4px;border-radius:3px;font-size:10px">{' + v + '}</code>').join(' ')}</div>
+                        <textarea id="prompt-textarea-${p.key}" style="width:100%;min-height:200px;max-height:500px;background:var(--surface);color:var(--text-bright);border:1px solid var(--border);border-radius:6px;padding:10px;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.5;resize:vertical">${_escapeHtml(p.prompt_template)}</textarea>
+                        <div style="display:flex;gap:6px;margin-top:8px">
+                            <button class="btn btn-primary btn-sm" onclick="savePrompt('${p.key}')" style="font-size:11px;padding:4px 14px">Save Changes</button>
+                            <button class="btn btn-secondary btn-sm" onclick="togglePromptEdit('${p.key}')" style="font-size:11px;padding:4px 14px">Cancel</button>
+                        </div>
+                        <div id="prompt-enhance-${p.key}" style="display:none;margin-top:12px"></div>
+                    </div>
+                </div>`;
+            }
+            html += `</div></div>`;
+        }
+
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = `<div style="color:var(--red);font-size:13px">Failed to load prompts: ${e.message}</div>`;
+    }
+}
+
+function _escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function togglePromptEdit(key) {
+    const editDiv = document.getElementById(`prompt-edit-${key}`);
+    if (editDiv) {
+        editDiv.style.display = editDiv.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+async function savePrompt(key) {
+    const textarea = document.getElementById(`prompt-textarea-${key}`);
+    if (!textarea) return;
+    try {
+        await api(`/config/prompts/${key}`, {
+            method: 'PUT',
+            body: { prompt_template: textarea.value },
+        });
+        toast('Prompt saved', 'success');
+        loadPromptLab();
+    } catch (e) {
+        toast('Save failed: ' + e.message, 'error');
+    }
+}
+
+async function resetPrompt(key) {
+    try {
+        const result = await api(`/config/prompts/${key}/reset`, { method: 'POST' });
+        toast('Prompt reset to default', 'success');
+        loadPromptLab();
+    } catch (e) {
+        toast('Reset failed: ' + e.message, 'error');
+    }
+}
+
+async function enhancePrompt(key) {
+    // Open edit pane if not already open
+    const editDiv = document.getElementById(`prompt-edit-${key}`);
+    if (editDiv) editDiv.style.display = 'block';
+
+    const enhanceDiv = document.getElementById(`prompt-enhance-${key}`);
+    if (!enhanceDiv) return;
+
+    enhanceDiv.style.display = 'block';
+    enhanceDiv.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px"><span class="loading-dots">Analyzing prompt with AI</span></div>';
+
+    try {
+        const result = await api(`/config/prompts/${key}/enhance`, { method: 'POST' });
+        let html = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <span style="font-size:12px;font-weight:600;color:var(--text-bright)">AI Enhancement Analysis</span>
+                <span style="font-size:11px;padding:2px 8px;background:${result.quality_score >= 70 ? '#4ade8022' : result.quality_score >= 40 ? '#f59e0b22' : '#ef444422'};color:${result.quality_score >= 70 ? '#4ade80' : result.quality_score >= 40 ? '#f59e0b' : '#ef4444'};border-radius:4px;font-weight:600">Score: ${result.quality_score}/100</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">${result.analysis || ''}</div>`;
+
+        if (result.suggestions && result.suggestions.length > 0) {
+            html += `<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">Suggestions</div>
+                <ul style="margin:0 0 8px;padding-left:16px;font-size:12px;color:var(--text-dim)">`;
+            for (const s of result.suggestions) {
+                html += `<li style="margin-bottom:4px">${_escapeHtml(s)}</li>`;
+            }
+            html += `</ul>`;
+        }
+
+        if (result.improved_template) {
+            html += `<button class="btn btn-primary btn-sm" onclick="applyEnhancedPrompt('${key}')" style="font-size:11px;padding:4px 14px;margin-top:4px">Apply Improved Version</button>
+                <textarea id="prompt-enhanced-${key}" style="display:none">${_escapeHtml(result.improved_template)}</textarea>`;
+        }
+        html += `</div>`;
+        enhanceDiv.innerHTML = html;
+    } catch (e) {
+        enhanceDiv.innerHTML = `<div style="color:var(--red);font-size:12px;padding:8px">Enhancement failed: ${e.message}</div>`;
+    }
+}
+
+function applyEnhancedPrompt(key) {
+    const enhanced = document.getElementById(`prompt-enhanced-${key}`);
+    const textarea = document.getElementById(`prompt-textarea-${key}`);
+    if (enhanced && textarea) {
+        textarea.value = enhanced.value;
+        toast('Enhanced prompt applied to editor - click Save to persist', 'success');
+    }
+}
+
+async function saveModelOverride(featureKey, tier) {
+    try {
+        await api('/config/models/override', {
+            method: 'PUT',
+            body: { feature_key: featureKey, model_tier: tier },
+        });
+        toast(tier ? `Model override: ${featureKey} -> ${tier}` : `Model override cleared for ${featureKey}`, 'success');
+        loadModelConfig();
+    } catch (e) {
+        toast('Override failed: ' + e.message, 'error');
+    }
+}
+
+async function clearModelOverride(featureKey) {
+    await saveModelOverride(featureKey, '');
 }
 
 async function reanalyzeProfile() {
@@ -2706,6 +2949,12 @@ async function triggerDeepResearch(jobId) {
 
 async function deepResearchShortlist() {
     if (!state.profileId) return;
+    // Spring Training gate: require Double-A
+    const stLevel = getSpringTrainingLevel();
+    if (stLevel.index < 2) {
+        toast('Reach Double-A in Spring Training to unlock Deep Research', 'warning');
+        return;
+    }
     toast('Deep researching shortlisted jobs...', 'info');
     try {
         const result = await api(`/profiles/${state.profileId}/deep-research-shortlist`, { method: 'POST' });
@@ -4674,6 +4923,13 @@ function _getIntelRunner(tab) {
 
 async function generateAll() {
     if (!state.profileId) return;
+    // Spring Training gate: require Double-A
+    const stLevel = getSpringTrainingLevel();
+    if (stLevel.index < 2) {
+        toast('Reach Double-A in Spring Training to unlock AI features', 'warning');
+        showView('dugout');
+        return;
+    }
     const genAllBtn = document.getElementById('btn-generate-all');
     setButtonLoading(genAllBtn, true);
 
@@ -5005,10 +5261,18 @@ async function saveReporterAnswer() {
             }
         }
 
+        // Update local profile state with the saved field
+        if (q.profileField && state.profile) {
+            state.profile[q.profileField] = mappedValue;
+        }
+
         const msgEl = document.getElementById('reporter-saved-msg');
         if (msgEl) { msgEl.textContent = 'Saved!'; setTimeout(() => msgEl.textContent = '', 2000); }
         _reporterQuestionIndex++;
         loadReporterCorner();
+
+        // Refresh Spring Training progress after Reporter Corner answer
+        if (typeof loadSpringTraining === 'function') loadSpringTraining();
     } catch (e) {
         toast('Failed to save answer', 'error');
     }
@@ -5017,17 +5281,23 @@ async function saveReporterAnswer() {
 // ── Dugout Helpers (called from showView) ───────────────────────────────
 
 async function loadDugoutReadiness() {
+    // Now handled by loadSpringTraining / updateDugoutReadinessBadge
     if (!state.profileId) return;
-    try {
-        const r = await api(`/profiles/${state.profileId}/apply-readiness`);
-        const el = document.getElementById('dugout-readiness');
-        if (!el) return;
-        const emoji = r.score >= 70 ? '🟢' : r.score >= 40 ? '🟡' : '🔴';
-        el.innerHTML = `<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--jb-bg-secondary);border-radius:8px;border:1px solid var(--jb-border)">
-            <span style="font-size:24px">${emoji}</span>
-            <div><div style="font-size:16px;font-weight:600">${r.score}% Ready</div><div style="font-size:12px;color:var(--jb-text-2)">${r.passed}/${r.total} checks passed</div></div>
-        </div>`;
-    } catch {}
+    // Spring Training already updates the readiness badge, but
+    // keep backward compat: if Spring Training is complete, show the real readiness score
+    const stLevel = getSpringTrainingLevel();
+    if (stLevel.level === 'the_show') {
+        try {
+            const r = await api(`/profiles/${state.profileId}/apply-readiness`);
+            const el = document.getElementById('dugout-readiness');
+            if (!el) return;
+            const emoji = r.score >= 70 ? '🟢' : r.score >= 40 ? '🟡' : '🔴';
+            el.innerHTML = `<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--jb-bg-secondary);border-radius:8px;border:1px solid var(--jb-border)">
+                <span style="font-size:24px">${emoji}</span>
+                <div><div style="font-size:16px;font-weight:600">${r.score}% Ready</div><div style="font-size:12px;color:var(--jb-text-2)">${r.passed}/${r.total} checks passed &mdash; Spring Training Complete!</div></div>
+            </div>`;
+        } catch {}
+    }
 }
 
 async function loadDugoutSeasonStats() {
@@ -5044,47 +5314,181 @@ async function loadDugoutSeasonStats() {
     } catch {}
 }
 
-async function loadScoutingReport() {
-    const el = document.getElementById('scouting-checklist');
+// ── Spring Training System ───────────────────────────────────────────────
+
+const SPRING_TRAINING_LEVELS = [
+    { key: 'rookie', name: 'Rookie Ball', icon: '⚾', hint: 'Upload your resume' },
+    { key: 'single_a', name: 'Single-A', icon: '🥉', hint: 'Fill in name, email, location, target roles & locations' },
+    { key: 'double_a', name: 'Double-A', icon: '🥈', hint: 'AI profile analysis, seniority level & min salary set' },
+    { key: 'triple_a', name: 'Triple-A', icon: '🥇', hint: 'Answer Reporter Corner: remote pref, industry & deal-breakers' },
+    { key: 'the_show', name: 'The Show', icon: '🏟️', hint: 'Ready to search! All critical fields filled' },
+];
+
+function getSpringTrainingLevel() {
+    if (!state.profile) return { level: 'rookie', index: 0, checks: {} };
+    const p = state.profile;
+
+    const hasResume = !!(p.resume_uploaded || p.has_resume_text);
+    const hasBasicFields = !!(p.name && p.email && p.location
+        && (p.target_roles || []).length > 0
+        && (p.target_locations || []).length > 0);
+    const hasDeepAnalysis = !!(p.has_profile_doc && p.seniority_level && p.min_salary);
+    const hasReporterAnswers = !!(p.remote_preference && p.remote_preference !== 'any'
+        && p.industry_preference
+        && p.deal_breakers);
+    // The Show = everything above is done
+    const allComplete = hasResume && hasBasicFields && hasDeepAnalysis && hasReporterAnswers;
+
+    const checks = { hasResume, hasBasicFields, hasDeepAnalysis, hasReporterAnswers, allComplete };
+
+    let level = 'rookie';
+    let index = 0;
+    if (hasResume) { level = 'single_a'; index = 1; }
+    if (hasResume && hasBasicFields) { level = 'double_a'; index = 2; }
+    if (hasResume && hasBasicFields && hasDeepAnalysis) { level = 'triple_a'; index = 3; }
+    if (allComplete) { level = 'the_show'; index = 4; }
+
+    return { level, index, checks };
+}
+
+function loadSpringTraining() {
+    const el = document.getElementById('spring-training-levels');
+    const card = document.getElementById('dugout-spring-training');
+    const titleEl = document.getElementById('spring-training-title');
+
     if (!state.profileId || !state.profile) {
-        // Show a get-started state when no profile exists
         if (el) el.innerHTML = `
             <div style="padding:12px 0;text-align:center">
-                <div style="font-size:13px;color:var(--jb-text-dim);margin-bottom:12px">Create a profile to start your pre-game checklist.</div>
+                <div style="font-size:13px;color:var(--jb-text-dim);margin-bottom:12px">Create a profile to begin Spring Training.</div>
                 <button class="btn btn-primary btn-sm" onclick="showView('profile')">Get Started</button>
             </div>`;
-        const pctEl = document.getElementById('scouting-progress-pct');
-        if (pctEl) pctEl.textContent = '0% complete';
+        const pctEl = document.getElementById('spring-training-pct');
+        if (pctEl) pctEl.innerHTML = '<span class="st-level-badge level-rookie">Rookie Ball</span>';
         return;
     }
-    const p = state.profile;
-    const checks = [
-        { label: 'Profile Created', done: true },
-        { label: 'Resume Uploaded', done: p.resume_uploaded || p.has_resume_text },
-        { label: 'Target Roles Set', done: (p.target_roles || []).length > 0 },
-        { label: 'Location Set', done: !!p.location },
-        { label: 'First Search Done', done: false },
-        { label: 'First Application', done: false },
-    ];
-    try {
-        const s = await api(`/profiles/${state.profileId}/stats`);
-        checks[4].done = s.total_jobs > 0;
-        checks[5].done = s.applications > 0;
-    } catch {}
 
-    if (!el) return;
-    const done = checks.filter(c => c.done).length;
-    const pct = Math.round((done / checks.length) * 100);
-    el.innerHTML = checks.map(c => `
-        <div class="scouting-check ${c.done ? 'scouting-check-done' : ''}" style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px">
-            <span style="color:${c.done ? 'var(--jb-green,#4caf50)' : 'var(--jb-text-dim)'}">${c.done ? '✓' : '○'}</span>
-            <span style="color:${c.done ? 'var(--jb-text-1)' : 'var(--jb-text-dim)'}">${esc(c.label)}</span>
-        </div>
-    `).join('');
-    const bar = document.getElementById('scouting-progress-bar');
+    const { level, index, checks } = getSpringTrainingLevel();
+    const pct = Math.round((index / (SPRING_TRAINING_LEVELS.length - 1)) * 100);
+
+    // Update progress bar
+    const bar = document.getElementById('spring-training-progress-bar');
     if (bar) bar.style.width = pct + '%';
-    const pctEl = document.getElementById('scouting-progress-pct');
-    if (pctEl) pctEl.textContent = pct + '% complete';
+
+    // Update level badge
+    const pctEl = document.getElementById('spring-training-pct');
+    if (pctEl) {
+        const lvl = SPRING_TRAINING_LEVELS[index];
+        pctEl.innerHTML = `<span class="st-level-badge level-${level}">${lvl.icon} ${lvl.name}</span> <span style="color:var(--jb-text-muted)">${pct}% complete</span>`;
+    }
+
+    // Update title
+    if (titleEl) {
+        titleEl.textContent = level === 'the_show' ? 'Spring Training Complete!' : 'Road to The Show';
+    }
+
+    // Complete state
+    if (card) {
+        card.classList.toggle('spring-complete', level === 'the_show');
+    }
+
+    // Build level rows
+    const checkMap = [checks.hasResume, checks.hasBasicFields, checks.hasDeepAnalysis, checks.hasReporterAnswers, checks.allComplete];
+    const actions = [
+        `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Upload Resume</button>`,
+        `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Edit Profile</button>`,
+        `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Analyze Profile</button>`,
+        `<button class="btn btn-primary btn-sm" onclick="showView('dugout')">Answer Questions</button>`,
+        null,
+    ];
+
+    if (el) {
+        el.innerHTML = SPRING_TRAINING_LEVELS.map((lvl, i) => {
+            const done = i < index || (i === index && level === 'the_show');
+            const current = i === index && level !== 'the_show';
+            const locked = i > index;
+            return `
+                <div class="st-level-row ${done ? 'st-done' : ''} ${current ? 'st-current' : ''}">
+                    <div class="st-level-icon">${done ? '✓' : lvl.icon}</div>
+                    <div class="st-level-info">
+                        <div class="st-level-name">${esc(lvl.name)}</div>
+                        ${current ? `<div class="st-level-hint">${esc(lvl.hint)}</div>` : ''}
+                        ${current && actions[i] ? `<div class="st-level-action">${actions[i]}</div>` : ''}
+                        ${locked ? `<div class="st-level-hint" style="font-style:italic">${esc(lvl.hint)}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // Update readiness badge
+    updateDugoutReadinessBadge(level, index);
+
+    // Apply feature gating
+    applyFeatureGating(level, index);
+}
+
+function updateDugoutReadinessBadge(level, index) {
+    const el = document.getElementById('dugout-readiness');
+    if (!el) return;
+    const pct = Math.round((index / (SPRING_TRAINING_LEVELS.length - 1)) * 100);
+    const lvl = SPRING_TRAINING_LEVELS[index];
+    const emoji = level === 'the_show' ? '🟢' : index >= 2 ? '🟡' : '🔴';
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--jb-bg-secondary);border-radius:8px;border:1px solid var(--jb-border)">
+        <span style="font-size:24px">${emoji}</span>
+        <div>
+            <div style="font-size:16px;font-weight:600">${pct}% Ready</div>
+            <div style="font-size:12px;color:var(--jb-text-2)">Spring Training: ${lvl.name}</div>
+        </div>
+    </div>`;
+}
+
+function applyFeatureGating(level, index) {
+    // Gate search buttons: require "the_show" level
+    const searchBtns = document.querySelectorAll('#btn-search-jobs, #btn-search-more, #btn-search-empty');
+    searchBtns.forEach(btn => {
+        if (index < 4) {
+            btn.classList.add('btn-gated');
+            btn.title = 'Complete Spring Training to unlock search';
+            btn._springGated = true;
+        } else {
+            btn.classList.remove('btn-gated');
+            btn.title = '';
+            btn._springGated = false;
+        }
+    });
+
+    // Gate Bullpen AI features: require "double_a" or higher
+    const genAllBtn = document.getElementById('btn-generate-all');
+    if (genAllBtn) {
+        if (index < 2) {
+            genAllBtn.classList.add('btn-gated');
+            genAllBtn.title = 'Reach Double-A in Spring Training to unlock';
+            genAllBtn._springGated = true;
+        } else {
+            genAllBtn.classList.remove('btn-gated');
+            genAllBtn.title = '';
+            genAllBtn._springGated = false;
+        }
+    }
+
+    // Gate deep research shortlist button
+    const deepResBtn = document.getElementById('btn-deep-research-shortlist');
+    if (deepResBtn) {
+        if (index < 2) {
+            deepResBtn.classList.add('btn-gated');
+            deepResBtn.title = 'Reach Double-A in Spring Training to unlock';
+            deepResBtn._springGated = true;
+        } else {
+            deepResBtn.classList.remove('btn-gated');
+            deepResBtn.title = '';
+            deepResBtn._springGated = false;
+        }
+    }
+}
+
+// Alias for backward compat
+async function loadScoutingReport() {
+    loadSpringTraining();
 }
 
 async function loadDugoutCharts() {
@@ -5206,3 +5610,14 @@ window.resetDatabase = resetDatabase;
 window.parseAndSaveProfile = parseAndSaveProfile;
 window.confirmParsedProfile = confirmParsedProfile;
 window.loadReporterCorner = loadReporterCorner;
+window.getSpringTrainingLevel = getSpringTrainingLevel;
+window.loadPromptLab = loadPromptLab;
+window.loadModelConfig = loadModelConfig;
+window.togglePromptEdit = togglePromptEdit;
+window.savePrompt = savePrompt;
+window.resetPrompt = resetPrompt;
+window.enhancePrompt = enhancePrompt;
+window.applyEnhancedPrompt = applyEnhancedPrompt;
+window.saveModelOverride = saveModelOverride;
+window.clearModelOverride = clearModelOverride;
+window.loadSpringTraining = loadSpringTraining;

@@ -3265,6 +3265,119 @@ RULES:
         db.close()
 
 
+# ── Prompt Lab & Model Configuration ─────────────────────────────────────
+
+@router.get("/config/prompts")
+def get_all_prompts_api():
+    """Return all AI prompts grouped by category."""
+    from backend.services.prompt_registry import get_all_prompts
+    return get_all_prompts()
+
+
+@router.get("/config/prompts/{key}")
+def get_prompt_api(key: str):
+    """Return a single prompt's metadata and template."""
+    from backend.services.prompt_registry import get_prompt
+    prompt = get_prompt(key)
+    if not prompt:
+        raise HTTPException(404, f"Prompt '{key}' not found")
+    return prompt
+
+
+@router.put("/config/prompts/{key}")
+def update_prompt_api(key: str, data: dict):
+    """Update a prompt template at runtime."""
+    from backend.services.prompt_registry import update_prompt
+    template = data.get("prompt_template", "")
+    if not template:
+        raise HTTPException(400, "prompt_template is required")
+    if update_prompt(key, template):
+        return {"status": "updated", "key": key}
+    raise HTTPException(404, f"Prompt '{key}' not found")
+
+
+@router.post("/config/prompts/{key}/reset")
+def reset_prompt_api(key: str):
+    """Reset a prompt to its default template."""
+    from backend.services.prompt_registry import reset_prompt, get_default_template
+    was_modified = reset_prompt(key)
+    default = get_default_template(key)
+    if default is None:
+        raise HTTPException(404, f"Prompt '{key}' not found")
+    return {"status": "reset", "was_modified": was_modified, "prompt_template": default}
+
+
+@router.post("/config/prompts/{key}/enhance")
+async def enhance_prompt_api(key: str):
+    """Use AI to suggest improvements to a prompt template."""
+    from backend.services.prompt_registry import get_prompt
+    prompt_data = get_prompt(key)
+    if not prompt_data:
+        raise HTTPException(404, f"Prompt '{key}' not found")
+
+    current_template = prompt_data["prompt_template"]
+    name = prompt_data["name"]
+    description = prompt_data["description"]
+
+    enhance_prompt = f"""You are an expert prompt engineer. Analyze this AI prompt template and suggest improvements.
+
+PROMPT NAME: {name}
+DESCRIPTION: {description}
+MODEL TIER: {prompt_data['model_tier']}
+
+CURRENT PROMPT TEMPLATE:
+---
+{current_template}
+---
+
+Analyze the prompt and provide:
+1. A quality score (0-100) for the current prompt
+2. Specific suggestions for improvement
+3. An improved version of the prompt
+
+Return JSON:
+{{
+    "quality_score": <0-100>,
+    "analysis": "2-3 sentences analyzing the current prompt's strengths and weaknesses",
+    "suggestions": ["specific suggestion 1", "suggestion 2", "suggestion 3"],
+    "improved_template": "The full improved prompt template (keep the same variable placeholders like {{variable_name}})"
+}}
+
+Focus on: clarity, specificity, output format consistency, guardrails, and scoring calibration."""
+
+    result = await ai_generate_json(enhance_prompt, max_tokens=2000, model_tier="balanced")
+    if not result:
+        raise HTTPException(500, "AI enhancement failed — try again")
+    return result
+
+
+@router.get("/config/models")
+def get_models_api():
+    """Return available models and current configuration."""
+    from backend.services.prompt_registry import get_model_config
+    return get_model_config()
+
+
+@router.put("/config/models/override")
+def set_model_override_api(data: dict):
+    """Set a per-feature model tier override."""
+    from backend.services.prompt_registry import set_model_override, clear_model_override
+    feature_key = data.get("feature_key", "")
+    model_tier = data.get("model_tier", "")
+
+    if not feature_key:
+        raise HTTPException(400, "feature_key is required")
+
+    # Allow clearing override by passing empty/null tier
+    if not model_tier:
+        clear_model_override(feature_key)
+        return {"status": "cleared", "feature_key": feature_key}
+
+    if set_model_override(feature_key, model_tier):
+        return {"status": "updated", "feature_key": feature_key, "model_tier": model_tier}
+    raise HTTPException(400, f"Invalid feature_key or model_tier")
+
+
 # ── Email Integration ─────────────────────────────────────────────────────
 
 @router.post("/profiles/{profile_id}/check-emails")
