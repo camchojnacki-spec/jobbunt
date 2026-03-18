@@ -102,8 +102,40 @@ class ProfileCreate(BaseModel):
     strengths: Optional[str] = None
     growth_areas: Optional[str] = None
 
-class ProfileUpdate(ProfileCreate):
-    pass
+class ProfileUpdate(BaseModel):
+    """All fields optional for partial updates (e.g. Reporter Corner saving one field at a time)."""
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    target_roles: Optional[list[str]] = None
+    target_locations: Optional[list[str]] = None
+    min_salary: Optional[int] = None
+    max_salary: Optional[int] = None
+    remote_preference: Optional[str] = None
+    experience_years: Optional[int] = None
+    skills: Optional[list[str]] = None
+    cover_letter_template: Optional[str] = None
+    raw_profile_doc: Optional[str] = None
+    search_tiers_down: Optional[int] = None
+    search_tiers_up: Optional[int] = None
+    pin: Optional[str] = None
+    seniority_level: Optional[str] = None
+    availability: Optional[str] = None
+    employment_type: Optional[str] = None
+    commute_tolerance: Optional[str] = None
+    relocation: Optional[str] = None
+    company_size: Optional[str] = None
+    industry_preference: Optional[str] = None
+    top_priority: Optional[str] = None
+    security_clearance: Optional[str] = None
+    travel_willingness: Optional[str] = None
+    additional_notes: Optional[str] = None
+    deal_breakers: Optional[str] = None
+    ideal_culture: Optional[str] = None
+    values: Optional[str] = None
+    strengths: Optional[str] = None
+    growth_areas: Optional[str] = None
 
 class ProfilePasteInput(BaseModel):
     text: str
@@ -217,37 +249,25 @@ def get_profile(profile_id: int, db: Session = Depends(get_db), user: User = Dep
 @router.put("/profiles/{profile_id}")
 def update_profile(profile_id: int, data: ProfileUpdate, db: Session = Depends(get_db), user: User = Depends(get_optional_user)):
     profile = _get_profile_for_user(profile_id, user, db)
-    profile.name = data.name
-    profile.email = data.email
-    profile.phone = data.phone
-    profile.location = data.location
-    profile.target_roles = json.dumps(data.target_roles)
-    profile.target_locations = json.dumps(data.target_locations)
-    profile.min_salary = data.min_salary
-    profile.max_salary = data.max_salary
-    profile.remote_preference = data.remote_preference
-    profile.experience_years = data.experience_years
-    profile.skills = json.dumps(data.skills)
-    profile.cover_letter_template = data.cover_letter_template
-    if data.raw_profile_doc is not None:
-        profile.raw_profile_doc = data.raw_profile_doc
-    if data.search_tiers_down is not None:
-        profile.search_tiers_down = data.search_tiers_down
-    if data.search_tiers_up is not None:
-        profile.search_tiers_up = data.search_tiers_up
-    if data.pin is not None:
-        profile.pin = data.pin or None
-    # Reporter Corner fields
-    reporter_fields = [
+    # Only update fields that were explicitly provided (partial update support)
+    json_fields = {'target_roles', 'target_locations', 'skills'}
+    simple_fields = [
+        'name', 'email', 'phone', 'location', 'min_salary', 'max_salary',
+        'remote_preference', 'experience_years', 'cover_letter_template',
+        'raw_profile_doc', 'search_tiers_down', 'search_tiers_up', 'pin',
         'seniority_level', 'availability', 'employment_type', 'commute_tolerance',
         'relocation', 'company_size', 'industry_preference', 'top_priority',
         'security_clearance', 'travel_willingness', 'additional_notes',
-        'deal_breakers', 'ideal_culture', 'values', 'strengths', 'growth_areas'
+        'deal_breakers', 'ideal_culture', 'values', 'strengths', 'growth_areas',
     ]
-    for f in reporter_fields:
+    for f in simple_fields:
         val = getattr(data, f, None)
         if val is not None:
             setattr(profile, f, val)
+    for f in json_fields:
+        val = getattr(data, f, None)
+        if val is not None:
+            setattr(profile, f, json.dumps(val))
     db.commit()
     return _profile_dict(profile)
 
