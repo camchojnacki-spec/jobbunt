@@ -2635,6 +2635,10 @@ async function loadInsights() {
     const content = document.getElementById('insights-content');
     if (!content) return;
 
+    // Set button loading state
+    const btn = document.querySelector('#subtab-overview .btn-primary');
+    setButtonLoading(btn, true);
+
     content.innerHTML = `<div style="text-align:center;padding:40px">
         <svg width="48" height="48" viewBox="0 0 120 120" fill="none">
             <style>@keyframes o-spin{to{transform:rotate(360deg)}}@keyframes p-pulse{0%,100%{opacity:.15}50%{opacity:.35}}</style>
@@ -2654,6 +2658,8 @@ async function loadInsights() {
         renderInsights(data);
     } catch (e) {
         content.innerHTML = `<div class="empty-state"><h2>Failed to load insights</h2><p>${esc(e.message)}</p></div>`;
+    } finally {
+        setButtonLoading(btn, false);
     }
 }
 
@@ -3011,6 +3017,10 @@ async function loadSearchAdvisor() {
     const content = document.getElementById('advisor-content');
     if (!content) return;
 
+    // Set button loading state
+    const btn = document.querySelector('#subtab-advisor .btn-primary');
+    setButtonLoading(btn, true);
+
     content.innerHTML = `<div style="text-align:center;padding:40px">
         <svg width="48" height="48" viewBox="0 0 120 120" fill="none">
             <style>@keyframes adv-spin{to{transform:rotate(360deg)}}@keyframes adv-pulse{0%,100%{opacity:.15}50%{opacity:.35}}</style>
@@ -3047,6 +3057,8 @@ async function loadSearchAdvisor() {
             </div>
             <h2>Swing and a miss</h2><p>${esc(e.message)} — try again in a moment</p>
         </div>`;
+    } finally {
+        setButtonLoading(btn, false);
     }
 }
 
@@ -4495,6 +4507,22 @@ function switchPipelineTab(tab) {
     else if (tab === 'applications') loadApplications();
 }
 
+// ── Button Loading Helper ────────────────────────────────────────────────
+
+function setButtonLoading(btn, loading) {
+    if (!btn) return;
+    if (loading) {
+        btn.dataset.originalText = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-inline"></span> Running...';
+        btn.disabled = true;
+        btn.classList.add('btn-loading');
+    } else {
+        btn.innerHTML = btn.dataset.originalText || btn.innerHTML;
+        btn.disabled = false;
+        btn.classList.remove('btn-loading');
+    }
+}
+
 // ── Intel / Bullpen Tab Switching ────────────────────────────────────────
 
 function switchIntelTab(tab, autoRun) {
@@ -4524,15 +4552,93 @@ function switchIntelTab(tab, autoRun) {
 }
 
 function runFromHub(btn, tabId) {
-    switchIntelTab(tabId, true);
+    setButtonLoading(btn, true);
+    const widget = btn.closest('.pregame-hub-widget');
+    if (widget) widget.classList.add('pregame-widget-running');
+
+    // Switch to tab and run, then restore button when done
+    switchIntelTab(tabId, false);
+    const runner = _getIntelRunner(tabId);
+    if (runner) {
+        runner().finally(() => {
+            setButtonLoading(btn, false);
+            if (widget) {
+                widget.classList.remove('pregame-widget-running');
+                widget.classList.add('pregame-widget-done');
+            }
+        });
+    } else {
+        setButtonLoading(btn, false);
+    }
+}
+
+function _getIntelRunner(tab) {
+    switch (tab) {
+        case 'overview': return loadInsights;
+        case 'advisor': return loadSearchAdvisor;
+        case 'skills-audit': return runSkillsAuditIntel;
+        case 'resume': return improveResumeIntel;
+        case 'pregame': return loadPregameReport;
+        default: return null;
+    }
+}
+
+async function generateAll() {
+    if (!state.profileId) return;
+    const genAllBtn = document.getElementById('btn-generate-all');
+    setButtonLoading(genAllBtn, true);
+
+    // Find all hub card buttons
+    const hubBtns = document.querySelectorAll('.pregame-hub-btn');
+    const tabs = ['overview', 'advisor', 'skills-audit', 'resume'];
+
+    // Mark all widgets as running
+    hubBtns.forEach(btn => {
+        setButtonLoading(btn, true);
+        const widget = btn.closest('.pregame-hub-widget');
+        if (widget) widget.classList.add('pregame-widget-running');
+    });
+
+    // Run all analyses in parallel
+    const runners = tabs.map((tab, i) => {
+        const runner = _getIntelRunner(tab);
+        if (!runner) return Promise.resolve();
+        return runner().then(() => {
+            const btn = hubBtns[i];
+            if (btn) {
+                setButtonLoading(btn, false);
+                const widget = btn.closest('.pregame-hub-widget');
+                if (widget) {
+                    widget.classList.remove('pregame-widget-running');
+                    widget.classList.add('pregame-widget-done');
+                }
+            }
+        }).catch(() => {
+            const btn = hubBtns[i];
+            if (btn) {
+                setButtonLoading(btn, false);
+                const widget = btn.closest('.pregame-hub-widget');
+                if (widget) widget.classList.remove('pregame-widget-running');
+            }
+        });
+    });
+
+    await Promise.allSettled(runners);
+    setButtonLoading(genAllBtn, false);
 }
 
 // ── Pregame Report ──────────────────────────────────────────────────────
 
-async function loadPregameReport() {
+async function loadPregameReport(triggerBtn) {
     if (!state.profileId) return;
     const area = document.getElementById('pregame-summary-area');
     if (!area) return;
+
+    // Find the Generate Report button if not passed
+    if (!triggerBtn) {
+        triggerBtn = document.querySelector('#subtab-pregame .btn-primary');
+    }
+    setButtonLoading(triggerBtn, true);
     area.innerHTML = '<div class="loading-shimmer" style="height:200px;border-radius:8px"></div>';
 
     try {
@@ -4590,6 +4696,8 @@ async function loadPregameReport() {
         area.innerHTML = html;
     } catch (e) {
         area.innerHTML = `<div class="empty-state"><h2>Report generation failed</h2><p>${esc(e.message)}</p></div>`;
+    } finally {
+        setButtonLoading(triggerBtn, false);
     }
 }
 
@@ -4615,6 +4723,11 @@ async function runSkillsAuditIntel() {
     if (!state.profileId) return;
     const el = document.getElementById('intel-skills-audit');
     if (!el) return;
+
+    // Set button loading state
+    const btn = document.querySelector('#subtab-skills-audit .btn-primary');
+    setButtonLoading(btn, true);
+
     el.innerHTML = '<div class="loading-shimmer" style="height:300px;border-radius:8px"></div>';
 
     try {
@@ -4652,6 +4765,8 @@ async function runSkillsAuditIntel() {
         el.innerHTML = html;
     } catch (e) {
         el.innerHTML = `<div class="empty-state"><h2>Audit failed</h2><p>${esc(e.message)}</p></div>`;
+    } finally {
+        setButtonLoading(btn, false);
     }
 }
 
@@ -4669,10 +4784,16 @@ async function improveResume() {
 async function improveResumeIntel() {
     if (!state.profileId) return;
     const el = document.getElementById('intel-resume-container');
+    const btn = document.querySelector('#subtab-resume .btn-primary');
+    setButtonLoading(btn, true);
     if (el) {
         el.innerHTML = '<div class="loading-shimmer" style="height:300px;border-radius:8px"></div>';
     }
-    await _doImproveResume(el);
+    try {
+        await _doImproveResume(el);
+    } finally {
+        setButtonLoading(btn, false);
+    }
 }
 
 async function _doImproveResume(el) {
@@ -4930,8 +5051,10 @@ window.switchProfile = switchProfile;
 window.createNewProfile = createNewProfile;
 window.toggleImportSection = toggleImportSection;
 window.switchPipelineTab = switchPipelineTab;
+window.setButtonLoading = setButtonLoading;
 window.switchIntelTab = switchIntelTab;
 window.runFromHub = runFromHub;
+window.generateAll = generateAll;
 window.loadPregameReport = loadPregameReport;
 window.loadInsights = loadInsights;
 window.loadSearchAdvisor = loadSearchAdvisor;
