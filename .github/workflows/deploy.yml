@@ -39,7 +39,11 @@ jobs:
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
             SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+            SERPAPI_KEY=${{ secrets.SERPAPI_KEY }}
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            GCS_BUCKET=${{ secrets.GCS_BUCKET }}
             ENV=production
+          flags: '--add-cloudsql-instances=${{ secrets.CLOUD_SQL_CONNECTION }}'
 
       - name: Show URL
         run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
