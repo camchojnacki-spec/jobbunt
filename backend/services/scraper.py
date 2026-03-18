@@ -2285,6 +2285,23 @@ async def search_all_sources(profile: Profile, sources: list[str] | None = None,
     summary_parts = [f"{src}={count}" for src, count in sorted(source_result_counts.items(), key=lambda x: -x[1])]
     logger.info(f"Multi-source search complete: {len(all_jobs)} total raw results. Per-source: {', '.join(summary_parts) or 'none'}")
 
+    # ── Browser fallback: if regular scraping returned few/no results, use Playwright ──
+    if len(all_jobs) < 5:
+        logger.info(f"Only {len(all_jobs)} results from regular scraping — trying Playwright browser fallback")
+        try:
+            from backend.services.browser_orchestrator import scrape_jobs_browser
+            # Use first role + first location for browser search
+            browser_query = target_roles[0] if target_roles else ""
+            browser_loc = target_locations[0] if target_locations else ""
+            browser_sites = ["indeed_ca", "linkedin", "glassdoor"] if _detect_region(target_locations) == "canada" else ["indeed", "linkedin", "glassdoor"]
+            browser_jobs = await scrape_jobs_browser(browser_query, browser_loc, browser_sites, max_per_site=15)
+            if browser_jobs:
+                all_jobs.extend(browser_jobs)
+                logger.info(f"Browser fallback added {len(browser_jobs)} jobs")
+                source_result_counts["browser"] = len(browser_jobs)
+        except Exception as e:
+            logger.warning(f"Browser fallback failed: {e}")
+
     # AI relevance gate: filter out jobs from wrong domains
     pre_filter_count = len(all_jobs)
     try:
