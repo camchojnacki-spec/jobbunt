@@ -3348,6 +3348,16 @@ Focus on: clarity, specificity, output format consistency, guardrails, and scori
     result = await ai_generate_json(enhance_prompt, max_tokens=2000, model_tier="balanced")
     if not result:
         raise HTTPException(500, "AI enhancement failed — try again")
+    # Ensure required fields exist with sensible defaults
+    result.setdefault("quality_score", 50)
+    result.setdefault("analysis", "Analysis unavailable.")
+    result.setdefault("suggestions", [])
+    result.setdefault("improved_template", current_template)
+    # Coerce quality_score to int in case AI returned a string
+    try:
+        result["quality_score"] = int(result["quality_score"])
+    except (ValueError, TypeError):
+        result["quality_score"] = 50
     return result
 
 

@@ -8,10 +8,12 @@ from backend.database import Base
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    google_id = Column(String(100), unique=True, nullable=False, index=True)
+    google_id = Column(String(100), unique=True, nullable=True, index=True)
     email = Column(String(200), nullable=False)
     name = Column(String(200))
     picture_url = Column(String(500))
+    password_hash = Column(String(200), nullable=True)  # For local auth (bcrypt)
+    auth_provider = Column(String(20), default="google")  # "google" or "local"
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     last_login = Column(DateTime, default=datetime.datetime.utcnow)
     profiles = relationship("Profile", back_populates="user")

@@ -50,15 +50,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupFormHandlers();
     setupActionButtons();
     // Fetch auth user (Google profile picture, name)
+    let authenticated = false;
     try {
         const authResp = await fetch('/auth/me').catch(() => null);
-        const authUser = authResp?.ok ? await authResp.json() : null;
-        if (authUser) {
-            state.authUser = authUser;
-            // Auto-claim unclaimed profiles on first login
-            try { await fetch('/auth/claim-profiles', { method: 'POST' }); } catch(e) { /* ok */ }
+        if (authResp?.ok) {
+            const authUser = await authResp.json();
+            if (authUser && authUser.id) {
+                state.authUser = authUser;
+                authenticated = true;
+                // Auto-claim unclaimed profiles on first login
+                try { await fetch('/auth/claim-profiles', { method: 'POST' }); } catch(e) { /* ok */ }
+            }
         }
     } catch(e) { /* auth not enabled or not logged in */ }
+
+    // Check if auth is required and user isn't logged in
+    if (!authenticated) {
+        try {
+            const configResp = await fetch('/auth/config');
+            const config = await configResp.json();
+            if (config.auth_enabled || config.local_auth_enabled) {
+                const overlay = document.getElementById('login-overlay');
+                if (overlay) overlay.style.display = 'flex';
+                // Dev user skip link removed for security
+                return; // Don't load profile until logged in
+            }
+        } catch(e) {}
+    }
+
     await loadProfile();
 });
 
@@ -416,7 +435,7 @@ async function saveProfile() {
         toast('Profile saved!', 'success');
 
         const resumeInput = document.getElementById('f-resume');
-        if (resumeInput.files.length > 0) {
+        if (resumeInput && resumeInput.files.length > 0) {
             const formData = new FormData();
             formData.append('file', resumeInput.files[0]);
             await api(`/profiles/${state.profileId}/resume`, { method: 'POST', body: formData });
@@ -438,7 +457,7 @@ async function searchJobs() {
     // Spring Training gate
     const stLevel = getSpringTrainingLevel();
     if (stLevel.level !== 'the_show') {
-        toast('Complete Spring Training to unlock search! Current level: ' + SPRING_TRAINING_LEVELS[stLevel.index].name, 'warning');
+        toast('Complete The Climb to unlock search! Current level: ' + SPRING_TRAINING_LEVELS[stLevel.index].name, 'warning');
         showView('dugout');
         return;
     }
@@ -711,7 +730,7 @@ function renderBaseballCardBlurb(stats) {
     const lastName = name.slice(1).join(' ') || '';
     const ab = stats.at_bats || stats.total_jobs || 0;
     const ops = stats.ops || 0;
-    const yrs = p.experience_years || '?';
+    const yrs = p.experience_years ? p.experience_years : null;
     const roles = (p.target_roles || []).slice(0, 2);
     const loc = p.location || 'Unknown';
 
@@ -737,7 +756,7 @@ function renderBaseballCardBlurb(stats) {
         </svg>
         <div class="card-blurb-text">
             <div class="card-blurb-name">${esc(firstName)} ${esc(lastName)}</div>
-            <div class="card-blurb-role">${esc(roleText)} · ${yrs} yrs · ${esc(loc)}</div>
+            <div class="card-blurb-role">${esc(roleText)}${yrs ? ' · ' + yrs + ' yrs' : ''} · ${esc(loc)}</div>
             <div class="card-blurb-scouting">${scouting}</div>
         </div>
     `;
@@ -786,6 +805,24 @@ function renderBrowseView() {
         feed.style.display = 'none';
         actionBar.style.display = 'none';
         toolbar.style.display = 'none';
+        // Show contextual empty state
+        const stLevel = typeof getSpringTrainingLevel === 'function' ? getSpringTrainingLevel() : null;
+        if (stLevel && stLevel.level !== 'the_show') {
+            empty.innerHTML = `
+                <div style="font-size:48px;margin-bottom:16px">&#x1F50D;</div>
+                <h2>No jobs yet</h2>
+                <p>Complete The Climb to unlock job search, then hit SEARCH JOBS to find opportunities.</p>
+                <button class="btn btn-primary" onclick="showView('dugout')">Go to The Climb</button>`;
+        } else {
+            empty.innerHTML = `
+                <div style="font-size:48px;margin-bottom:16px">&#x1F50D;</div>
+                <h2>No jobs yet</h2>
+                <p>Hit SEARCH JOBS to find opportunities.</p>
+                <div class="btn-group">
+                    <button class="cta-btn btn-search-trigger" id="btn-search-empty" onclick="searchJobs()">Search for Jobs</button>
+                    <button class="btn btn-secondary" onclick="showView('profile')">Edit Profile</button>
+                </div>`;
+        }
         empty.style.display = 'block';
         return;
     }
@@ -2367,6 +2404,13 @@ function setActionButtonsEnabled(enabled) {
 
 // ── Settings Page ───────────────────────────────────────────────────────
 
+function toggleAdminTools(show) {
+    document.querySelectorAll('.admin-tool').forEach(el => {
+        el.style.display = show ? '' : 'none';
+    });
+    if (show) { loadModelConfig(); loadPromptLab(); }
+}
+
 async function loadSettings() {
     // Show AI provider status
     const badge = document.getElementById('provider-badge');
@@ -2438,18 +2482,22 @@ async function loadModelConfig() {
         const p = config.provider;
         const providerLabel = p === 'anthropic' ? 'Claude (Anthropic)' : p === 'gemini' ? 'Gemini (Google)' : 'None';
 
+        // Sanitize: show provider status (connected/not) without exposing internal model identifiers
+        const providerStatus = p ? 'Connected' : 'Not configured';
         let html = `<div style="margin-bottom:16px">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-                <span style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">Active Provider:</span>
-                <span style="font-size:13px;font-weight:600;color:var(--text-bright)">${providerLabel}</span>
+                <span style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">AI Provider:</span>
+                <span style="font-size:13px;font-weight:600;color:var(--text-bright)">${providerLabel} (${providerStatus})</span>
             </div>
             <div style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Model Tiers</div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">`;
         for (const tier of ['flash', 'balanced', 'deep']) {
             const info = config.tiers[tier];
+            // Show tier status without exposing raw model identifiers
+            const tierStatus = info.active ? 'Active' : 'N/A';
             html += `<div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center">
                 <div style="font-size:11px;font-weight:600;color:${TIER_COLORS[tier]};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">${TIER_LABELS[tier]}</div>
-                <div style="font-size:12px;color:var(--text-bright);word-break:break-all">${info.active || 'N/A'}</div>
+                <div style="font-size:12px;color:var(--text-bright);word-break:break-all">${tierStatus}</div>
             </div>`;
         }
         html += `</div></div>`;
@@ -2589,10 +2637,11 @@ async function enhancePrompt(key) {
 
     try {
         const result = await api(`/config/prompts/${key}/enhance`, { method: 'POST' });
+        const score = parseInt(result.quality_score) || 0;
         let html = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
                 <span style="font-size:12px;font-weight:600;color:var(--text-bright)">AI Enhancement Analysis</span>
-                <span style="font-size:11px;padding:2px 8px;background:${result.quality_score >= 70 ? '#4ade8022' : result.quality_score >= 40 ? '#f59e0b22' : '#ef444422'};color:${result.quality_score >= 70 ? '#4ade80' : result.quality_score >= 40 ? '#f59e0b' : '#ef4444'};border-radius:4px;font-weight:600">Score: ${result.quality_score}/100</span>
+                <span style="font-size:11px;padding:2px 8px;background:${score >= 70 ? '#4ade8022' : score >= 40 ? '#f59e0b22' : '#ef444422'};color:${score >= 70 ? '#4ade80' : score >= 40 ? '#f59e0b' : '#ef4444'};border-radius:4px;font-weight:600">Score: ${score}/100</span>
             </div>
             <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">${result.analysis || ''}</div>`;
 
@@ -4396,17 +4445,127 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ── Missing Handlers — Login / Profile Dropdown / Import ────────────────
 
-function skipLogin() {
-    const overlay = document.getElementById('login-overlay');
-    if (overlay) overlay.style.display = 'none';
+// skipLogin removed for security
+
+// ── Local Auth ──────────────────────────────────────────────────────────
+
+let _localAuthMode = 'login'; // 'login' or 'register'
+
+function toggleLocalAuthMode() {
+    _localAuthMode = _localAuthMode === 'login' ? 'register' : 'login';
+    const nameField = document.getElementById('local-auth-name');
+    const submitBtn = document.getElementById('local-auth-submit');
+    const toggleText = document.getElementById('local-auth-toggle-text');
+    const toggleLink = document.getElementById('local-auth-toggle-link');
+    const errorDiv = document.getElementById('local-auth-error');
+    const passField = document.getElementById('local-auth-password');
+
+    const confirmField = document.getElementById('local-auth-confirm-password');
+    const dividerSpan = document.querySelector('.local-auth-divider span');
+
+    if (_localAuthMode === 'register') {
+        if (nameField) nameField.style.display = '';
+        if (confirmField) confirmField.style.display = '';
+        if (submitBtn) submitBtn.textContent = 'Create Account';
+        if (toggleText) toggleText.textContent = 'Already have an account?';
+        if (toggleLink) toggleLink.textContent = 'Sign in';
+        if (passField) passField.autocomplete = 'new-password';
+        if (dividerSpan) dividerSpan.textContent = 'or create account with email';
+    } else {
+        if (nameField) { nameField.style.display = 'none'; nameField.value = ''; }
+        if (confirmField) { confirmField.style.display = 'none'; confirmField.value = ''; }
+        if (submitBtn) submitBtn.textContent = 'Sign In';
+        if (toggleText) toggleText.textContent = "Don't have an account?";
+        if (toggleLink) toggleLink.textContent = 'Create one';
+        if (passField) passField.autocomplete = 'current-password';
+        if (dividerSpan) dividerSpan.textContent = 'or sign in with email';
+    }
+    if (errorDiv) errorDiv.style.display = 'none';
 }
 
-function logout() {
+async function handleLocalAuth() {
+    const email = document.getElementById('local-auth-email')?.value?.trim();
+    const password = document.getElementById('local-auth-password')?.value;
+    const name = document.getElementById('local-auth-name')?.value?.trim();
+    const errorDiv = document.getElementById('local-auth-error');
+    const submitBtn = document.getElementById('local-auth-submit');
+
+    if (!email || !password || (_localAuthMode === 'register' && !name)) {
+        if (errorDiv) { errorDiv.textContent = _localAuthMode === 'register' ? 'Name, email, and password are required' : 'Email and password are required'; errorDiv.style.display = ''; }
+        return;
+    }
+    if (_localAuthMode === 'register') {
+        const confirmPassword = document.getElementById('local-auth-confirm-password')?.value;
+        if (password !== confirmPassword) {
+            if (errorDiv) { errorDiv.textContent = 'Passwords do not match'; errorDiv.style.display = ''; }
+            return;
+        }
+    }
+
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Loading...'; }
+    if (errorDiv) errorDiv.style.display = 'none';
+
+    try {
+        const endpoint = _localAuthMode === 'register' ? '/auth/local/register' : '/auth/local/login';
+        const body = _localAuthMode === 'register'
+            ? { name, email, password }
+            : { email, password };
+
+        const resp = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text();
+            let msg = 'Login failed';
+            try { msg = JSON.parse(errText).detail || msg; } catch(e) {}
+            throw new Error(msg);
+        }
+
+        const user = await resp.json();
+        state.authUser = user;
+        const overlay = document.getElementById('login-overlay');
+        if (overlay) overlay.style.display = 'none';
+        toast(`Welcome, ${user.name}!`, 'success');
+        // Reload to set up profile
+        location.reload();
+
+    } catch(e) {
+        if (errorDiv) { errorDiv.textContent = e.message; errorDiv.style.display = ''; }
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = _localAuthMode === 'register' ? 'Create Account' : 'Sign In';
+        }
+    }
+}
+
+// Enter key in password field triggers submit
+document.addEventListener('DOMContentLoaded', () => {
+    const passField = document.getElementById('local-auth-password');
+    if (passField) passField.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLocalAuth(); });
+});
+
+async function logout() {
     localStorage.removeItem('jb_profile_id');
     localStorage.removeItem('jb_token');
     state.profileId = null;
     state.profile = null;
-    location.reload();
+    state.authUser = null;
+    // Clear server session
+    try { await fetch('/auth/logout'); } catch(e) {}
+    // Show login overlay instead of reloading (allows switching users)
+    const overlay = document.getElementById('login-overlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+        // Reset form state
+        const errorDiv = document.getElementById('local-auth-error');
+        if (errorDiv) errorDiv.style.display = 'none';
+    } else {
+        location.reload();
+    }
 }
 
 function toggleProfileDropdown() {
@@ -4899,95 +5058,306 @@ async function _doImproveResume(el) {
 
 // ── Reporter Corner ─────────────────────────────────────────────────────
 
+// Question types: 'single' (pick one), 'multi' (pick many), 'boolean' (yes/no), 'text' (free-form)
+// level: which Spring Training level this question advances (single_a, double_a, triple_a)
 const REPORTER_QUESTIONS = [
-    // ── Profile-filling questions first (these update actual profile fields) ──
-    { q: "What's your preferred work setup?", choices: ["Fully remote", "Hybrid (2-3 days in office)", "On-site", "No preference"], profileField: "remote_preference", mapTo: { "Fully remote": "remote", "Hybrid (2-3 days in office)": "hybrid", "On-site": "onsite", "No preference": "any" }, fillsProfile: true },
-    { q: "What seniority level are you targeting?", choices: ["Manager / Senior Manager", "Director", "VP / SVP", "C-Suite (CISO, CTO, etc.)"], profileField: "seniority_level", mapTo: { "Manager / Senior Manager": "senior", "Director": "director", "VP / SVP": "vp", "C-Suite (CISO, CTO, etc.)": "c-suite" }, fillsProfile: true },
-    { q: "What's your minimum salary expectation?", choices: ["$100K - $130K", "$130K - $160K", "$160K - $200K", "$200K+"], profileField: "min_salary", mapTo: { "$100K - $130K": "100000", "$130K - $160K": "130000", "$160K - $200K": "160000", "$200K+": "200000" }, fillsProfile: true },
-    { q: "What industries interest you most?", choices: ["Financial Services / Banking", "Tech / SaaS", "Government / Public Sector", "Healthcare / Pharma"], profileField: "industry_preference", fillsProfile: true },
-    { q: "Are you open to contract or consulting roles?", choices: ["Permanent only", "Open to contract", "Prefer contract / consulting", "No preference"], profileField: "employment_type", fillsProfile: true },
-    { q: "How far are you willing to commute?", choices: ["Under 30 min", "30 - 60 min", "Over 60 min if needed", "Remote only"], profileField: "commute_tolerance", fillsProfile: true },
-    { q: "Would you consider roles that require relocation?", choices: ["Yes, anywhere", "Yes, within my country", "Only for the right role", "No, staying put"], profileField: "relocation", fillsProfile: true },
-    { q: "What size company do you prefer?", choices: ["Startup (< 50 people)", "Mid-size (50 - 500)", "Large enterprise (500+)", "No preference"], profileField: "company_size", fillsProfile: true },
-    { q: "How soon are you looking to start?", choices: ["Immediately", "Within 1 month", "2 - 3 months", "Just exploring"], profileField: "availability", fillsProfile: true },
-    { q: "What matters most in your next role?", choices: ["Compensation & benefits", "Growth & title advancement", "Mission & impact", "Work-life balance"], profileField: "top_priority", fillsProfile: true },
-    // ── General scouting questions (personality & preferences) ──
-    { q: "What's your ideal work environment?", choices: ["Remote-first startup", "Hybrid corporate", "Small team, big impact", "Enterprise with clear structure"], profileField: "ideal_culture" },
-    { q: "What motivates you most?", choices: ["Solving hard problems", "Building teams", "Making an impact", "Learning new tech"], profileField: "values" },
-    { q: "What's your biggest strength?", choices: ["Technical depth", "Strategic thinking", "People leadership", "Cross-functional communication"], profileField: "strengths" },
-    { q: "How do you prefer to grow?", choices: ["Hands-on projects", "Mentorship", "Formal training", "Stretch assignments"], profileField: "growth_areas" },
-    { q: "What's a deal-breaker for you?", choices: ["Micromanagement", "No remote option", "Below-market pay", "Toxic culture"], profileField: "deal_breakers" },
+    // ── SINGLE-A: Core profile fields ──────────────────────────────────────
+    { q: "What seniority level are you targeting?", type: "single", level: "single_a",
+      choices: ["Manager / Senior Manager", "Director", "VP / SVP", "C-Suite (CISO, CTO, etc.)"],
+      profileField: "seniority_level", fillsProfile: true,
+      mapTo: { "Manager / Senior Manager": "senior", "Director": "director", "VP / SVP": "vp", "C-Suite (CISO, CTO, etc.)": "c-suite" } },
+    { q: "What's your minimum salary expectation?", type: "single", level: "single_a",
+      choices: ["$100K - $130K", "$130K - $160K", "$160K - $200K", "$200K+"],
+      profileField: "min_salary", fillsProfile: true,
+      mapTo: { "$100K - $130K": "100000", "$130K - $160K": "130000", "$160K - $200K": "160000", "$200K+": "200000" } },
+    { q: "How soon are you looking to start?", type: "single", level: "single_a",
+      choices: ["Immediately", "Within 1 month", "2 - 3 months", "Just exploring"],
+      profileField: "availability", fillsProfile: true },
+
+    // ── DOUBLE-A: Preferences & logistics ──────────────────────────────────
+    { q: "What's your preferred work setup?", type: "single", level: "double_a",
+      choices: ["Fully remote", "Hybrid (2-3 days in office)", "On-site", "No preference"],
+      profileField: "remote_preference", fillsProfile: true,
+      mapTo: { "Fully remote": "remote", "Hybrid (2-3 days in office)": "hybrid", "On-site": "onsite", "No preference": "any" } },
+    { q: "Are you open to contract or consulting roles?", type: "single", level: "double_a",
+      choices: ["Permanent only", "Open to contract", "Prefer contract / consulting", "No preference"],
+      profileField: "employment_type", fillsProfile: true },
+    { q: "How far are you willing to commute?", type: "single", level: "double_a",
+      choices: ["Under 30 min", "30 - 60 min", "Over 60 min if needed", "Remote only"],
+      profileField: "commute_tolerance", fillsProfile: true },
+    { q: "Would you consider roles that require relocation?", type: "boolean", level: "double_a",
+      choices: ["Yes, anywhere", "Yes, within my country", "Only for the right role", "No, staying put"],
+      profileField: "relocation", fillsProfile: true },
+    { q: "What size company do you prefer?", type: "multi", level: "double_a",
+      choices: ["Startup (< 50)", "Mid-size (50 - 500)", "Large enterprise (500+)", "No preference"],
+      profileField: "company_size", fillsProfile: true },
+
+    // ── TRIPLE-A: Deep preferences & deal-breakers ─────────────────────────
+    { q: "What industries interest you most?", type: "multi", level: "triple_a",
+      choices: ["Financial Services / Banking", "Tech / SaaS", "Government / Public Sector", "Healthcare / Pharma", "Consulting", "Energy / Utilities", "Retail / E-commerce", "Telecommunications"],
+      profileField: "industry_preference", fillsProfile: true },
+    { q: "What matters most in your next role?", type: "multi", level: "triple_a",
+      choices: ["Compensation & benefits", "Growth & title advancement", "Mission & impact", "Work-life balance", "Team culture", "Technical challenge"],
+      profileField: "top_priority", fillsProfile: true },
+    { q: "What are your deal-breakers?", type: "multi", level: "triple_a",
+      choices: ["Micromanagement", "No remote option", "Below-market pay", "Toxic culture", "No growth path", "Excessive travel", "On-call requirements", "Outdated tech stack"],
+      profileField: "deal_breakers", fillsProfile: true },
+
+    // ── THE MAJORS: Fine-tuning & personality ──────────────────────────────
+    { q: "What's your ideal work environment?", type: "single", level: "the_show",
+      choices: ["Remote-first startup", "Hybrid corporate", "Small team, big impact", "Enterprise with clear structure"],
+      profileField: "ideal_culture" },
+    { q: "What motivates you most?", type: "multi", level: "the_show",
+      choices: ["Solving hard problems", "Building teams", "Making an impact", "Learning new tech", "Mentoring others", "Revenue growth"],
+      profileField: "values" },
+    { q: "What are your biggest strengths?", type: "multi", level: "the_show",
+      choices: ["Technical depth", "Strategic thinking", "People leadership", "Cross-functional communication", "Crisis management", "Vendor management", "Board-level presenting"],
+      profileField: "strengths" },
+    { q: "How do you prefer to grow?", type: "multi", level: "the_show",
+      choices: ["Hands-on projects", "Mentorship", "Formal training", "Stretch assignments", "Conference speaking", "Side projects"],
+      profileField: "growth_areas" },
+    { q: "Do you have an active security clearance?", type: "boolean", level: "the_show",
+      profileField: "security_clearance" },
+    { q: "Are you willing to travel for work?", type: "single", level: "the_show",
+      choices: ["No travel", "Up to 10%", "Up to 25%", "Up to 50%", "Willing to travel extensively"],
+      profileField: "travel_willingness" },
+    { q: "Anything else a recruiter should know?", type: "text", level: "the_show",
+      profileField: "additional_notes", placeholder: "E.g., visa requirements, notice period, preferred start date, specific companies you're targeting..." },
 ];
 
 let _reporterQuestionIndex = 0;
+let _reporterMultiSelections = new Set();  // tracks multi-select picks
+
+const LEVEL_THEME = {
+    single_a:  { icon: '🥉', label: 'Single-A',  color: '#CD7F32', bg: 'rgba(205,127,50,.08)' },
+    double_a:  { icon: '🥈', label: 'Double-A',  color: '#C0C0C0', bg: 'rgba(192,192,192,.06)' },
+    triple_a:  { icon: '🥇', label: 'Triple-A',  color: '#FFD700', bg: 'rgba(255,215,0,.06)' },
+    the_show:  { icon: '🏟️', label: 'The Majors', color: '#4A90D9', bg: 'rgba(74,144,217,.06)' },
+};
 
 function loadReporterCorner() {
-    const qEl = document.getElementById('reporter-question');
+    const container = document.getElementById('reporter-question');
     const taEl = document.getElementById('reporter-textarea');
     const saveBtn = document.getElementById('reporter-save-btn');
 
     // Gate behind profile completion
     if (!state.profileId || !state.profile) {
-        if (qEl) qEl.innerHTML = `<div style="font-size:13px;color:var(--jb-text-dim);padding:8px 0">Complete your profile to unlock the pre-game interview.</div>`;
+        if (container) container.innerHTML = `<div style="font-size:13px;color:var(--jb-text-dim);padding:8px 0">Complete your profile to unlock the pre-game interview.</div>`;
         if (taEl) taEl.style.display = 'none';
         if (saveBtn) saveBtn.style.display = 'none';
         return;
     }
-    if (taEl) taEl.style.display = '';
-    if (saveBtn) saveBtn.style.display = '';
+
+    // Count answered questions and update title
+    const answeredCount = REPORTER_QUESTIONS.filter(rq => rq.profileField && state.profile?.[rq.profileField]).length;
+    const titleEl = document.querySelector('#dugout-reporter-corner .dugout-card-title');
+    if (titleEl) titleEl.textContent = `Pre-game Interview (${answeredCount}/${REPORTER_QUESTIONS.length})`;
+
+    // Skip past already-answered questions to find the next unanswered one
+    let attempts = 0;
+    while (attempts < REPORTER_QUESTIONS.length) {
+        const candidate = REPORTER_QUESTIONS[_reporterQuestionIndex % REPORTER_QUESTIONS.length];
+        if (candidate.profileField && state.profile?.[candidate.profileField]) {
+            _reporterQuestionIndex++;
+            attempts++;
+        } else {
+            break;
+        }
+    }
+
+    // All answered?
+    if (attempts >= REPORTER_QUESTIONS.length) {
+        if (container) container.innerHTML = `
+            <div style="text-align:center;padding:16px 0">
+                <div style="font-size:24px;margin-bottom:8px">🏟️</div>
+                <div style="font-size:14px;font-weight:500;color:var(--text-bright)">All questions answered!</div>
+                <div style="font-size:12px;color:var(--text-dim);margin-top:4px">Your profile is fully built. You've made The Majors.</div>
+            </div>`;
+        if (taEl) taEl.style.display = 'none';
+        if (saveBtn) saveBtn.style.display = 'none';
+        return;
+    }
 
     const q = REPORTER_QUESTIONS[_reporterQuestionIndex % REPORTER_QUESTIONS.length];
-    if (qEl) {
-        qEl.innerHTML = `
-            <div class="reporter-q-text" style="font-size:14px;font-weight:500;margin-bottom:8px">${esc(q.q)}</div>
-            <div class="reporter-choices" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
-                ${q.choices.map(c => `<button class="btn btn-sm btn-secondary reporter-choice" onclick="document.getElementById('reporter-textarea').value='${esc(c)}'">${esc(c)}</button>`).join('')}
+    const theme = LEVEL_THEME[q.level] || LEVEL_THEME.single_a;
+    _reporterMultiSelections = new Set();
+
+    // Update Triple-A progress hint
+    const hintEl = document.getElementById('reporter-triple-a-hint');
+    if (hintEl) {
+        const { index } = getSpringTrainingLevel();
+        if (index >= 4) {
+            hintEl.textContent = '✓ The Majors — keep fine-tuning your profile';
+            hintEl.classList.add('completed');
+        } else {
+            // Count how many questions at the CURRENT level are answered
+            const currentLevelKey = SPRING_TRAINING_LEVELS[index]?.key || 'single_a';
+            const levelQs = REPORTER_QUESTIONS.filter(rq => rq.level === currentLevelKey);
+            const levelAnswered = levelQs.filter(rq => rq.profileField && state.profile?.[rq.profileField]).length;
+            hintEl.textContent = `${theme.icon} ${theme.label} questions (${levelAnswered}/${levelQs.length} answered)`;
+            hintEl.classList.remove('completed');
+        }
+    }
+
+    // Build question UI based on type
+    let inputHtml = '';
+    const qType = q.type || 'single';
+
+    if (qType === 'boolean') {
+        inputHtml = `
+            <div class="reporter-bool-row">
+                <button class="reporter-bool-btn" data-val="${q.choices?.[0] || 'Yes'}" onclick="selectReporterBool(this)">${q.choices?.[0] || 'Yes'}</button>
+                <button class="reporter-bool-btn" data-val="${q.choices?.[1] || 'No'}" onclick="selectReporterBool(this)">${q.choices?.[1] || 'No'}</button>
+                ${(q.choices || []).slice(2).map(c => `<button class="reporter-bool-btn" data-val="${esc(c)}" onclick="selectReporterBool(this)">${esc(c)}</button>`).join('')}
+            </div>`;
+        if (taEl) taEl.style.display = 'none';
+        if (saveBtn) saveBtn.style.display = 'none';
+
+    } else if (qType === 'single') {
+        inputHtml = `
+            <div class="reporter-choices-grid">
+                ${q.choices.map(c => `<button class="reporter-choice-btn" data-val="${esc(c)}" onclick="selectReporterSingle(this)">${esc(c)}</button>`).join('')}
+            </div>`;
+        if (taEl) taEl.style.display = 'none';
+        if (saveBtn) saveBtn.style.display = 'none';
+
+    } else if (qType === 'multi') {
+        inputHtml = `
+            <div class="reporter-choices-grid multi">
+                ${q.choices.map(c => `<button class="reporter-multi-btn" data-val="${esc(c)}" onclick="toggleReporterMulti(this)">${esc(c)}</button>`).join('')}
             </div>
+            <button class="reporter-confirm-btn" id="reporter-multi-confirm" onclick="confirmReporterMulti()">Confirm Selection</button>`;
+        if (taEl) taEl.style.display = 'none';
+        if (saveBtn) saveBtn.style.display = 'none';
+
+    } else { // text
+        inputHtml = '';
+        if (taEl) { taEl.style.display = ''; taEl.value = ''; taEl.placeholder = q.placeholder || 'Type your answer...'; }
+        if (saveBtn) saveBtn.style.display = '';
+    }
+
+    if (container) {
+        // Question number within its level
+        const levelQs = REPORTER_QUESTIONS.filter(rq => rq.level === q.level);
+        const qNumInLevel = levelQs.indexOf(q) + 1;
+
+        // Build "Previous" link if there is a previous answered question to go back to
+        let prevHtml = '';
+        if (_reporterQuestionIndex > 0) {
+            prevHtml = `<a href="#" class="reporter-prev-link" onclick="reporterGoBack();return false;" style="font-size:12px;color:var(--jb-text-dim,#8A9BB5);text-decoration:none;display:inline-block;margin-bottom:6px;cursor:pointer">&#8592; Previous</a>`;
+        }
+
+        container.innerHTML = `
+            ${prevHtml}
+            <div class="reporter-level-badge" style="background:${theme.bg};border-color:${theme.color}">
+                ${theme.icon} ${theme.label} — Question ${qNumInLevel} of ${levelQs.length}
+            </div>
+            <div class="reporter-q-text">${esc(q.q)}</div>
+            ${inputHtml}
         `;
     }
-    if (taEl) taEl.value = '';
 }
 
-async function saveReporterAnswer() {
+function reporterGoBack() {
+    if (_reporterQuestionIndex <= 0) return;
+    // Walk backwards to find the previous answered question
+    let idx = _reporterQuestionIndex - 1;
+    while (idx > 0) {
+        const candidate = REPORTER_QUESTIONS[idx % REPORTER_QUESTIONS.length];
+        if (candidate.profileField && state.profile?.[candidate.profileField]) break;
+        idx--;
+    }
+    _reporterQuestionIndex = idx;
+    loadReporterCorner();
+}
+
+// ── Reporter answer handlers ──
+
+function selectReporterBool(btn) {
+    // Highlight selected, save immediately
+    btn.closest('.reporter-bool-row').querySelectorAll('.reporter-bool-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    _saveReporterValue(btn.dataset.val);
+}
+
+function selectReporterSingle(btn) {
+    btn.closest('.reporter-choices-grid').querySelectorAll('.reporter-choice-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    _saveReporterValue(btn.dataset.val);
+}
+
+function toggleReporterMulti(btn) {
+    const val = btn.dataset.val;
+    if (_reporterMultiSelections.has(val)) {
+        _reporterMultiSelections.delete(val);
+        btn.classList.remove('selected');
+    } else {
+        _reporterMultiSelections.add(val);
+        btn.classList.add('selected');
+    }
+    // Update confirm button state
+    const confirmBtn = document.getElementById('reporter-multi-confirm');
+    if (confirmBtn) {
+        confirmBtn.disabled = _reporterMultiSelections.size === 0;
+        confirmBtn.textContent = _reporterMultiSelections.size > 0
+            ? `Confirm ${_reporterMultiSelections.size} selected`
+            : 'Confirm Selection';
+    }
+}
+
+function confirmReporterMulti() {
+    if (_reporterMultiSelections.size === 0) { toast('Select at least one option', 'warning'); return; }
+    _saveReporterValue([..._reporterMultiSelections].join(', '));
+}
+
+async function _saveReporterValue(rawAnswer) {
     const q = REPORTER_QUESTIONS[_reporterQuestionIndex % REPORTER_QUESTIONS.length];
-    const taEl = document.getElementById('reporter-textarea');
-    const answer = taEl ? taEl.value.trim() : '';
-    if (!answer) { toast('Pick an option or write your own', 'warning'); return; }
+    const mappedValue = q.mapTo ? (q.mapTo[rawAnswer] || rawAnswer) : rawAnswer;
 
     try {
-        // Map choice to actual profile value if mapTo exists
-        const mappedValue = q.mapTo ? (q.mapTo[answer] || answer) : answer;
-
-        // Try to update the actual profile field directly
         if (state.profileId && q.profileField) {
             const updateBody = {};
             updateBody[q.profileField] = mappedValue;
             try {
                 await api(`/profiles/${state.profileId}`, { method: 'PUT', body: updateBody });
             } catch(e) {
-                // Field might not exist on profile model — save as additional_info instead
-                await api(`/profiles/${state.profileId}/apply-advisor-suggestion`, {
-                    method: 'POST',
-                    body: { field: q.profileField, value: mappedValue }
-                });
+                // Direct PUT failed (field may not exist as a DB column).
+                // Try the advisor-suggestion fallback, but don't block advancement if it also fails.
+                try {
+                    await api(`/profiles/${state.profileId}/apply-advisor-suggestion`, {
+                        method: 'POST',
+                        body: { field: q.profileField, value: mappedValue }
+                    });
+                } catch(e2) {
+                    console.warn(`Reporter Corner: could not persist "${q.profileField}" to server, stored locally only.`, e2);
+                }
             }
         }
 
-        // Update local profile state with the saved field
+        // Always store locally so the question counts as answered
         if (q.profileField && state.profile) {
             state.profile[q.profileField] = mappedValue;
         }
 
-        const msgEl = document.getElementById('reporter-saved-msg');
-        if (msgEl) { msgEl.textContent = 'Saved!'; setTimeout(() => msgEl.textContent = '', 2000); }
+        // Brief "saved" flash then advance
+        toast('Saved!', 'success');
         _reporterQuestionIndex++;
-        loadReporterCorner();
-
-        // Refresh Spring Training progress after Reporter Corner answer
-        if (typeof loadSpringTraining === 'function') loadSpringTraining();
+        // Small delay so user sees the selection highlight before it moves on
+        setTimeout(() => {
+            loadReporterCorner();
+            if (typeof loadSpringTraining === 'function') loadSpringTraining();
+        }, 400);
     } catch (e) {
         toast('Failed to save answer', 'error');
     }
+}
+
+async function saveReporterAnswer() {
+    // Used for free-text questions only
+    const taEl = document.getElementById('reporter-textarea');
+    const answer = taEl ? taEl.value.trim() : '';
+    if (!answer) { toast('Type your answer first', 'warning'); return; }
+    await _saveReporterValue(answer);
 }
 
 // ── Dugout Helpers (called from showView) ───────────────────────────────
@@ -5033,7 +5403,7 @@ const SPRING_TRAINING_LEVELS = [
     { key: 'single_a', name: 'Single-A', icon: '🥉', hint: 'Fill in name, email, location, target roles & locations' },
     { key: 'double_a', name: 'Double-A', icon: '🥈', hint: 'AI profile analysis, seniority level & min salary set' },
     { key: 'triple_a', name: 'Triple-A', icon: '🥇', hint: 'Answer Reporter Corner: remote pref, industry & deal-breakers' },
-    { key: 'the_show', name: 'The Show', icon: '🏟️', hint: 'Ready to search! All critical fields filled' },
+    { key: 'the_show', name: 'The Majors', icon: '🏟️', hint: 'Ready to search! All critical fields filled' },
 ];
 
 function getSpringTrainingLevel() {
@@ -5048,7 +5418,7 @@ function getSpringTrainingLevel() {
     const hasReporterAnswers = !!(p.remote_preference && p.remote_preference !== 'any'
         && p.industry_preference
         && p.deal_breakers);
-    // The Show = everything above is done
+    // The Majors = everything above is done
     const allComplete = hasResume && hasBasicFields && hasDeepAnalysis && hasReporterAnswers;
 
     const checks = { hasResume, hasBasicFields, hasDeepAnalysis, hasReporterAnswers, allComplete };
@@ -5095,7 +5465,7 @@ function loadSpringTraining() {
 
     // Update title
     if (titleEl) {
-        titleEl.textContent = level === 'the_show' ? 'Spring Training Complete!' : 'Road to The Show';
+        titleEl.textContent = level === 'the_show' ? 'The Climb — Complete!' : 'The Climb';
     }
 
     // Complete state
@@ -5109,7 +5479,7 @@ function loadSpringTraining() {
         `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Upload Resume</button>`,
         `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Edit Profile</button>`,
         `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Analyze Profile</button>`,
-        `<button class="btn btn-primary btn-sm" onclick="showView('dugout')">Answer Questions</button>`,
+        `<button class="btn btn-primary btn-sm" onclick="showView('dugout');setTimeout(()=>document.getElementById('dugout-reporter-corner')?.scrollIntoView({behavior:'smooth',block:'center'}),200)">Answer Questions</button>`,
         null,
     ];
 
@@ -5154,14 +5524,34 @@ function updateDugoutReadinessBadge(level, index) {
     </div>`;
 }
 
+function _addGatedClickHandler(btn, message) {
+    // Remove any previous gated handler to avoid duplicates
+    if (btn._gatedClickHandler) {
+        btn.removeEventListener('click', btn._gatedClickHandler, true);
+        btn._gatedClickHandler = null;
+    }
+    const handler = (e) => {
+        if (btn._springGated) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            toast(message, 'warning');
+        }
+    };
+    btn._gatedClickHandler = handler;
+    btn.addEventListener('click', handler, true);
+}
+
 function applyFeatureGating(level, index) {
+    const levelName = SPRING_TRAINING_LEVELS[index]?.name || 'Rookie Ball';
+
     // Gate search buttons: require "the_show" level
     const searchBtns = document.querySelectorAll('#btn-search-jobs, #btn-search-more, #btn-search-empty');
     searchBtns.forEach(btn => {
         if (index < 4) {
             btn.classList.add('btn-gated');
-            btn.title = 'Complete Spring Training to unlock search';
+            btn.title = 'Complete The Climb to unlock search';
             btn._springGated = true;
+            _addGatedClickHandler(btn, 'Complete The Climb to unlock this feature. Current level: ' + levelName);
         } else {
             btn.classList.remove('btn-gated');
             btn.title = '';
@@ -5176,6 +5566,7 @@ function applyFeatureGating(level, index) {
             genAllBtn.classList.add('btn-gated');
             genAllBtn.title = 'Reach Double-A in Spring Training to unlock';
             genAllBtn._springGated = true;
+            _addGatedClickHandler(genAllBtn, 'Complete The Climb to unlock this feature. Current level: ' + levelName);
         } else {
             genAllBtn.classList.remove('btn-gated');
             genAllBtn.title = '';
@@ -5190,6 +5581,7 @@ function applyFeatureGating(level, index) {
             deepResBtn.classList.add('btn-gated');
             deepResBtn.title = 'Reach Double-A in Spring Training to unlock';
             deepResBtn._springGated = true;
+            _addGatedClickHandler(deepResBtn, 'Complete The Climb to unlock this feature. Current level: ' + levelName);
         } else {
             deepResBtn.classList.remove('btn-gated');
             deepResBtn.title = '';
@@ -5290,7 +5682,9 @@ window.saveApiKeys = saveApiKeys;
 window.clearApiKeys = clearApiKeys;
 window.exportJobsCSV = exportJobsCSV;
 window.resetProfile = resetProfile;
-window.skipLogin = skipLogin;
+// window.skipLogin removed for security
+window.toggleLocalAuthMode = toggleLocalAuthMode;
+window.handleLocalAuth = handleLocalAuth;
 window.logout = logout;
 window.toggleProfileDropdown = toggleProfileDropdown;
 window.closeProfileDropdown = closeProfileDropdown;
@@ -5322,6 +5716,7 @@ window.resetDatabase = resetDatabase;
 window.parseAndSaveProfile = parseAndSaveProfile;
 window.confirmParsedProfile = confirmParsedProfile;
 window.loadReporterCorner = loadReporterCorner;
+window.reporterGoBack = reporterGoBack;
 window.getSpringTrainingLevel = getSpringTrainingLevel;
 window.loadPromptLab = loadPromptLab;
 window.loadModelConfig = loadModelConfig;

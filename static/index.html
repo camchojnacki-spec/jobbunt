@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260318a">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260318f">
     <script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
@@ -15,11 +15,27 @@
     <div class="login-overlay" id="login-overlay" style="display:none">
         <div class="login-container">
             <img src="/static/logo-dark.svg" alt="Jobbunt" class="login-logo">
-            <p class="login-tagline">Tinder-style job search & auto-apply</p>
+            <p class="login-tagline">AI-powered job search. Better interviews. Smarter applications.</p>
             <div id="google-signin-btn" class="google-signin-wrapper"></div>
-            <p class="login-skip" id="login-skip" style="display:none">
-                <a href="#" onclick="skipLogin();return false;">Continue without signing in</a>
-            </p>
+
+            <!-- Local Auth (works without Google) -->
+            <div class="local-auth-section" id="local-auth-section">
+                <div class="local-auth-divider"><span>or sign in with email</span></div>
+                <div id="local-auth-form">
+                    <input type="text" id="local-auth-name" class="local-auth-input" placeholder="Full Name" style="display:none" autocomplete="name">
+                    <input type="email" id="local-auth-email" class="local-auth-input" placeholder="Email" autocomplete="email">
+                    <input type="password" id="local-auth-password" class="local-auth-input" placeholder="Password" autocomplete="current-password">
+                    <input type="password" id="local-auth-confirm-password" class="local-auth-input" placeholder="Confirm Password" style="display:none" autocomplete="new-password">
+                    <div id="local-auth-error" class="local-auth-error" style="display:none"></div>
+                    <button class="btn btn-primary local-auth-btn" id="local-auth-submit" onclick="handleLocalAuth()">Sign In</button>
+                    <p class="local-auth-toggle">
+                        <span id="local-auth-toggle-text">Don't have an account?</span>
+                        <a href="#" id="local-auth-toggle-link" onclick="toggleLocalAuthMode();return false;">Create one</a>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Dev user skip removed for security -->
         </div>
     </div>
     <div class="app" id="app">
@@ -62,7 +78,7 @@
                         <button class="dropdown-item dropdown-create-new" onclick="createNewProfile()">
                             <span class="dropdown-create-icon">+</span> Create New Profile
                         </button>
-                        <button class="dropdown-item dropdown-signout" id="dropdown-signout" onclick="logout();closeProfileDropdown()" style="display:none">Sign Out</button>
+                        <button class="dropdown-item dropdown-signout" id="dropdown-signout" onclick="logout();closeProfileDropdown()">Sign Out</button>
                     </div>
                 </div>
             </div>
@@ -170,7 +186,7 @@
                         <!-- Spring Training Progression -->
                         <div class="dugout-card dugout-spring-training" id="dugout-spring-training">
                             <div class="dugout-card-label">SPRING TRAINING</div>
-                            <div class="dugout-card-title" id="spring-training-title">Road to The Show</div>
+                            <div class="dugout-card-title" id="spring-training-title">The Climb</div>
                             <div class="spring-training-progress">
                                 <div class="spring-training-progress-bar" id="spring-training-progress-bar" style="width:0%"></div>
                             </div>
@@ -182,16 +198,16 @@
 
                         <!-- Reporter Corner -->
                         <div class="dugout-card dugout-reporter-corner" id="dugout-reporter-corner">
-                            <div class="dugout-card-label">REPORTER CORNER</div>
+                            <div class="dugout-card-label">REPORTER CORNER <span class="reporter-triple-a-badge">🥇 SPRING TRAINING</span></div>
                             <div class="dugout-card-title">Pre-game Interview</div>
+                            <div class="reporter-triple-a-hint" id="reporter-triple-a-hint">Answer these to advance through the ranks</div>
                             <div class="reporter-question" id="reporter-question"></div>
-                            <textarea class="reporter-textarea" id="reporter-textarea" placeholder="Your answer..." rows="4"></textarea>
+                            <textarea class="reporter-textarea" id="reporter-textarea" placeholder="Your answer..." rows="3" style="display:none"></textarea>
                             <div class="reporter-actions">
-                                <button class="reporter-save-btn" id="reporter-save-btn" onclick="saveReporterAnswer()">
+                                <button class="reporter-save-btn" id="reporter-save-btn" onclick="saveReporterAnswer()" style="display:none">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                                     Save Answer
                                 </button>
-                                <span class="reporter-saved-msg" id="reporter-saved-msg"></span>
                             </div>
                         </div>
                     </div>
@@ -250,7 +266,7 @@
             <div class="view" id="view-hunt" data-view="hunt">
                 <div class="browse-container">
                     <!-- Browse toolbar -->
-                    <div class="browse-toolbar" id="browse-toolbar">
+                    <div class="browse-toolbar" id="browse-toolbar" style="display:none">
                         <div class="browse-toolbar-left">
                             <button class="btn btn-primary btn-sm btn-search-trigger" onclick="searchJobs()" id="btn-search-more">
                                 🔍 Search Jobs
@@ -778,7 +794,7 @@
 
                             <div class="form-row">
                                 <div class="form-group">
-                                    <label>Tiers Down</label>
+                                    <label title="Also consider roles below your target seniority level">Tiers Down <span style="cursor:help;color:var(--text-dim)" title="e.g., if you target Senior roles, '1 tier down' also searches Mid-level roles">&#9432;</span></label>
                                     <select id="f-tiers-down">
                                         <option value="0">None</option>
                                         <option value="1">1 tier down</option>
@@ -786,7 +802,7 @@
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label>Tiers Up</label>
+                                    <label title="Also consider roles above your target seniority level">Tiers Up <span style="cursor:help;color:var(--text-dim)" title="e.g., if you target Senior roles, '1 tier up' also searches Lead/Principal roles">&#9432;</span></label>
                                     <select id="f-tiers-up">
                                         <option value="0">None</option>
                                         <option value="1">1 tier up</option>
@@ -800,9 +816,10 @@
                         <div class="profile-section">
                             <div class="profile-section-header">Game Day Gear</div>
                             <div class="form-group">
-                                <label>Update Resume (PDF, DOCX, or TXT)</label>
-                                <input type="file" id="f-resume" accept=".pdf,.docx,.doc,.txt" style="padding:6px">
-                                <p style="color:var(--text-dim);font-size:11px;margin-top:4px">Already uploaded above? This lets you swap it out later.</p>
+                                <label>Resume</label>
+                                <p style="color:var(--text-dim);font-size:12px;margin-top:2px">
+                                    <a href="#" onclick="event.preventDefault();document.getElementById('resume-upload-section').scrollIntoView({behavior:'smooth'});document.getElementById('resume-drop-zone').style.borderColor='var(--jb-bright)';setTimeout(()=>document.getElementById('resume-drop-zone').style.borderColor='',1500)" style="color:var(--accent,#4A90D9);text-decoration:none">Upload or update your resume</a> in the section above.
+                                </p>
                             </div>
                             <div class="form-group">
                                 <label>Cover Letter Style Notes</label>
@@ -833,13 +850,6 @@
                             <button type="submit" class="btn btn-primary" id="btn-save-profile">Save Profile</button>
                         </div>
                     </form>
-
-                    <!-- Tryout Questions -->
-                    <div class="interview-section" id="interview-section">
-                        <div class="profile-section-header">The Tryout</div>
-                        <p style="color:var(--text-dim); font-size:12px; margin-bottom:10px">Answer a few questions so our AI can find you better matches and write stronger applications. The more you share, the sharper your results.</p>
-                        <div id="interview-container"></div>
-                    </div>
 
                     <!-- Resume Improver Section -->
                     <div class="interview-section" id="resume-improver-section">
@@ -928,12 +938,26 @@
                             <span class="provider-badge" id="provider-badge">Checking...</span>
                         </div>
                         <p style="font-size:12px; color:var(--text-dim); margin-top:8px">
-                            Set <code>ANTHROPIC_API_KEY</code> in .env for Claude (preferred), or <code>GEMINI_API_KEY</code> for Gemini fallback.
+                            AI features are powered by your configured provider. Contact your administrator to change providers.
                         </p>
                     </div>
 
-                    <!-- AI Model Configuration -->
+                    <!-- Admin Tools Toggle -->
                     <div class="settings-section">
+                        <div style="display:flex;align-items:center;justify-content:space-between">
+                            <div>
+                                <h3 style="margin:0">Admin Tools</h3>
+                                <p style="font-size:12px;color:var(--text-dim);margin-top:4px">Model configuration and prompt editing for power users</p>
+                            </div>
+                            <label class="settings-toggle">
+                                <input type="checkbox" id="admin-tools-toggle" onchange="toggleAdminTools(this.checked)">
+                                <span class="settings-toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- AI Model Configuration (admin-gated) -->
+                    <div class="settings-section admin-tool" style="display:none">
                         <h3>AI Model Configuration</h3>
                         <p>Configure which AI models are used for each feature category.</p>
                         <div id="model-config-container">
@@ -941,11 +965,11 @@
                         </div>
                     </div>
 
-                    <!-- Prompt Lab -->
-                    <div class="settings-section" style="border-color: var(--accent)">
+                    <!-- Prompt Lab (admin-gated) -->
+                    <div class="settings-section admin-tool" style="display:none;border-color: var(--accent)">
                         <h3 style="display:flex;align-items:center;gap:8px">
                             Prompt Lab
-                            <span style="font-size:10px;padding:2px 8px;background:var(--accent);color:#000;border-radius:10px;font-weight:600;letter-spacing:0.5px">POWER USER</span>
+                            <span style="font-size:10px;padding:2px 8px;background:var(--accent);color:#000;border-radius:10px;font-weight:600;letter-spacing:0.5px">ADMIN</span>
                         </h3>
                         <p>View, edit, and enhance all AI prompts used across the platform. Changes are stored in memory and reset on server restart.</p>
                         <div id="prompt-lab-container">
@@ -1075,7 +1099,7 @@
                     <div class="settings-section">
                         <h3>About</h3>
                         <div style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text-dim)">
-                            <div><strong style="color:var(--text-bright)">Jobbunt</strong> &mdash; Tinder-style job search &amp; auto-apply</div>
+                            <div><strong style="color:var(--text-bright)">Jobbunt</strong> &mdash; AI-powered job search &amp; smart applications</div>
                             <div>Version <code>2026.03</code></div>
                             <div>
                                 <a href="#" onclick="event.preventDefault();showView('profile');switchProfileTab('profile')" style="color:var(--accent)">Developer Kit</a>
@@ -1104,6 +1128,6 @@
         <div class="toast-container" id="toast-container"></div>
     </div>
 
-    <script src="/static/js/app.js?v=20260318a"></script>
+    <script src="/static/js/app.js?v=20260318k"></script>
 </body>
 </html>

@@ -24,10 +24,13 @@ _serializer = URLSafeTimedSerializer(SESSION_SECRET)
 
 
 def auth_enabled() -> bool:
-    """Return True if Google OAuth is configured and not bypassed for local dev."""
+    """Return True if authentication is active (Google OAuth or local auth).
+    When DEV_SKIP_AUTH is set, auth is bypassed entirely (single-user dev mode).
+    """
     if os.getenv("DEV_SKIP_AUTH", "").lower() in ("1", "true", "yes"):
         return False
-    return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+    # Auth is enabled if Google OAuth is configured OR local auth is being used
+    return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET) or bool(os.getenv("LOCAL_AUTH", ""))
 
 
 def get_redirect_uri(request: Request) -> str:

@@ -1744,55 +1744,13 @@ def _save_source_config(config: dict):
 
 
 async def search_serpapi_indeed(query: str, location: str, limit: int = 25) -> list[dict]:
-    """Search via SerpAPI Indeed engine (requires SERPAPI_KEY).
+    """Search for Indeed results via SerpAPI Google Jobs engine.
 
-    Uses SerpAPI's Indeed-specific engine for structured results from Indeed.
+    NOTE: SerpAPI discontinued the dedicated 'indeed' engine.
+    This now delegates to Google Jobs which aggregates Indeed listings.
     """
-    api_key = os.environ.get("SERPAPI_KEY") or _get_source_config().get("serpapi", {}).get("api_key", "")
-    if not api_key:
-        return []
-
-    jobs = []
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(
-                "https://serpapi.com/search.json",
-                params={
-                    "engine": "indeed",
-                    "q": query,
-                    "l": location,
-                    "api_key": api_key,
-                },
-            )
-            if resp.status_code != 200:
-                logger.warning(f"SerpAPI Indeed returned status {resp.status_code}")
-                return jobs
-
-            data = resp.json()
-            for item in data.get("jobs_results", [])[:limit]:
-                salary = ""
-                detected = item.get("detected_extensions", {})
-                if detected.get("salary"):
-                    salary = detected["salary"]
-
-                jobs.append({
-                    "title": item.get("title", ""),
-                    "company": item.get("company_name", "Unknown"),
-                    "location": item.get("location", location),
-                    "description": (item.get("description", "") or "")[:2000],
-                    "url": item.get("link", item.get("job_id", "")),
-                    "source": "indeed",
-                    "salary_text": salary,
-                    "job_type": detected.get("schedule_type", ""),
-                })
-
-            if jobs:
-                logger.info(f"SerpAPI Indeed: found {len(jobs)} results for '{query}' in '{location}'")
-
-    except Exception as e:
-        logger.error(f"SerpAPI Indeed search failed: {e}")
-
-    return jobs
+    logger.info("SerpAPI Indeed engine discontinued — delegating to Google Jobs (aggregates Indeed)")
+    return await search_serpapi_google_jobs(query, location, limit)
 
 
 # ── Source Registry ───────────────────────────────────────────────────────
