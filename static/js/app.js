@@ -5044,7 +5044,6 @@ async function loadScoutingReport() {
         checks[5].done = s.applications > 0;
     } catch {}
 
-    const el = document.getElementById('scouting-checklist');
     if (!el) return;
     const done = checks.filter(c => c.done).length;
     const pct = Math.round((done / checks.length) * 100);

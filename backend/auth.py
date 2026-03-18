@@ -24,7 +24,9 @@ _serializer = URLSafeTimedSerializer(SESSION_SECRET)
 
 
 def auth_enabled() -> bool:
-    """Return True if Google OAuth is configured."""
+    """Return True if Google OAuth is configured and not bypassed for local dev."""
+    if os.getenv("DEV_SKIP_AUTH", "").lower() in ("1", "true", "yes"):
+        return False
     return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 
 
