@@ -85,6 +85,22 @@ class ProfileCreate(BaseModel):
     search_tiers_down: Optional[int] = 0
     search_tiers_up: Optional[int] = 0
     pin: Optional[str] = None
+    seniority_level: Optional[str] = None
+    availability: Optional[str] = None
+    employment_type: Optional[str] = None
+    commute_tolerance: Optional[str] = None
+    relocation: Optional[str] = None
+    company_size: Optional[str] = None
+    industry_preference: Optional[str] = None
+    top_priority: Optional[str] = None
+    security_clearance: Optional[str] = None
+    travel_willingness: Optional[str] = None
+    additional_notes: Optional[str] = None
+    deal_breakers: Optional[str] = None
+    ideal_culture: Optional[str] = None
+    values: Optional[str] = None
+    strengths: Optional[str] = None
+    growth_areas: Optional[str] = None
 
 class ProfileUpdate(ProfileCreate):
     pass
@@ -221,6 +237,17 @@ def update_profile(profile_id: int, data: ProfileUpdate, db: Session = Depends(g
         profile.search_tiers_up = data.search_tiers_up
     if data.pin is not None:
         profile.pin = data.pin or None
+    # Reporter Corner fields
+    reporter_fields = [
+        'seniority_level', 'availability', 'employment_type', 'commute_tolerance',
+        'relocation', 'company_size', 'industry_preference', 'top_priority',
+        'security_clearance', 'travel_willingness', 'additional_notes',
+        'deal_breakers', 'ideal_culture', 'values', 'strengths', 'growth_areas'
+    ]
+    for f in reporter_fields:
+        val = getattr(data, f, None)
+        if val is not None:
+            setattr(profile, f, val)
     db.commit()
     return _profile_dict(profile)
 
@@ -2206,6 +2233,11 @@ async def apply_advisor_suggestion(profile_id: int, data: dict, db: Session = De
     allowed_fields = {
         "seniority_level", "min_salary", "max_salary",
         "search_tiers_down", "search_tiers_up", "remote_preference",
+        "availability", "employment_type", "commute_tolerance",
+        "relocation", "company_size", "industry_preference",
+        "top_priority", "security_clearance", "travel_willingness",
+        "additional_notes", "deal_breakers", "ideal_culture",
+        "values", "strengths", "growth_areas",
     }
     # Text fields the AI advisor can update (profile narrative fields)
     text_fields = {
@@ -3047,6 +3079,17 @@ def _profile_dict(p: Profile) -> dict:
         "search_tiers_down": p.search_tiers_down or 0,
         "search_tiers_up": p.search_tiers_up or 0,
         "career_history": _safe_json(p.career_history, []),
+        # Reporter Corner fields
+        "availability": p.availability,
+        "employment_type": p.employment_type,
+        "commute_tolerance": p.commute_tolerance,
+        "relocation": p.relocation,
+        "company_size": p.company_size,
+        "industry_preference": p.industry_preference,
+        "top_priority": p.top_priority,
+        "security_clearance": p.security_clearance,
+        "travel_willingness": p.travel_willingness,
+        "additional_notes": p.additional_notes,
     }
 
 
