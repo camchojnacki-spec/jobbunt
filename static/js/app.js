@@ -51,11 +51,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupActionButtons();
     // Fetch auth user (Google profile picture, name)
     try {
-        const authUser = await api('/auth/me').catch(() => null);
+        const authResp = await fetch('/auth/me').catch(() => null);
+        const authUser = authResp?.ok ? await authResp.json() : null;
         if (authUser) {
             state.authUser = authUser;
             // Auto-claim unclaimed profiles on first login
-            try { await api('/auth/claim-profiles', { method: 'POST' }); } catch(e) { /* ok */ }
+            try { await fetch('/auth/claim-profiles', { method: 'POST' }); } catch(e) { /* ok */ }
         }
     } catch(e) { /* auth not enabled or not logged in */ }
     await loadProfile();
@@ -584,11 +585,46 @@ async function loadStats() {
             </div>
         `;
 
+        // Baseball card front — avatar, name, position
+        renderBaseballCardFront();
         // Baseball card blurb — AI-generated "back of the card" flavor text
         renderBaseballCardBlurb(stats);
     } catch (e) {
         console.error('Stats load failed:', e);
     }
+}
+
+function renderBaseballCardFront() {
+    const el = document.getElementById('card-front');
+    if (!el || !state.profile) return;
+
+    const p = state.profile;
+    const name = p.name || 'Unknown';
+    const nameParts = name.split(' ');
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ').toUpperCase() || '';
+    const loc = p.location || '';
+    const pos = p.seniority_level ? p.seniority_level.substring(0, 2).toUpperCase() : 'SS';
+    const pictureUrl = state.authUser?.picture_url || '';
+
+    const avatarHTML = pictureUrl
+        ? `<img src="${esc(pictureUrl)}" alt="${esc(name)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />`
+        : `${(firstName[0] || '') + (lastName[0] || '')}`;
+
+    el.innerHTML = `
+        <div class="card-front-number">#${state.profileId || 0}</div>
+        <div class="card-front-position">${esc(pos)}</div>
+        <div class="card-front-avatar">${avatarHTML}</div>
+        <div class="card-front-name">
+            ${esc(firstName)}
+            <span class="card-front-lastname">${esc(lastName)}</span>
+        </div>
+        <div class="card-front-team">${esc(loc)}</div>
+        <svg class="card-front-diamond" width="32" height="32" viewBox="0 0 40 40" fill="none">
+            <path d="M20 2 L36 18 L20 34 L4 18Z" fill="var(--jb-navy,#1D2D5C)" stroke="var(--jb-bright,#4A90D9)" stroke-width="0.8" opacity="0.5"/>
+            <path d="M20 22 L28 18 L20 14 L12 18Z" fill="var(--jb-red,#E8291C)" opacity="0.35"/>
+        </svg>
+    `;
 }
 
 function renderBaseballCardBlurb(stats) {
