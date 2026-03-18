@@ -674,24 +674,26 @@ function renderBrowseView() {
 
     empty.style.display = 'none';
     toolbar.style.display = 'flex';
-    actionBar.style.display = 'flex';
     countEl.textContent = `${jobs.length} jobs`;
 
     if (state.browseMode === 'list') {
         listView.style.display = 'block';
         gridView.style.display = 'none';
         feed.style.display = 'none';
+        actionBar.style.display = 'none';
         renderJobList(jobs);
     } else if (state.browseMode === 'grid') {
         listView.style.display = 'none';
         gridView.style.display = 'block';
         feed.style.display = 'none';
+        actionBar.style.display = 'none';
         renderJobGrid(jobs);
     } else {
         // Card mode — existing single-card swipe view
         listView.style.display = 'none';
         gridView.style.display = 'none';
         feed.style.display = 'block';
+        actionBar.style.display = 'flex';
         renderCurrentCard();
     }
 }

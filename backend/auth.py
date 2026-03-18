@@ -1,13 +1,11 @@
-"""Google OAuth + JWT authentication for Jobbunt."""
+"""Google OAuth + session cookie authentication for Jobbunt."""
 import os
+import time
 import logging
-import datetime
 from typing import Optional
 
-import jwt
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-from fastapi import Header, Depends, HTTPException
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from fastapi import Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -16,84 +14,74 @@ from backend.models.models import User
 logger = logging.getLogger(__name__)
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
-JWT_SECRET = os.getenv("JWT_SECRET", "")
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_HOURS = 24 * 30  # 30 days
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+SESSION_SECRET = os.getenv("SESSION_SECRET", os.getenv("JWT_SECRET", "dev-fallback-secret-key"))
+SESSION_COOKIE_NAME = "jobbunt_session"
+SESSION_MAX_AGE = 7 * 24 * 3600  # 7 days in seconds
+OAUTH_REDIRECT_URI = os.getenv("OAUTH_REDIRECT_URI", "")  # e.g. http://localhost:8000/auth/callback
+
+_serializer = URLSafeTimedSerializer(SESSION_SECRET)
 
 
 def auth_enabled() -> bool:
     """Return True if Google OAuth is configured."""
-    return bool(GOOGLE_CLIENT_ID and JWT_SECRET)
+    return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 
 
-def verify_google_token(token: str) -> dict:
-    """Verify a Google ID token and return the payload (sub, email, name, picture)."""
-    if not GOOGLE_CLIENT_ID:
-        raise HTTPException(503, "Google OAuth is not configured on this server")
+def get_redirect_uri(request: Request) -> str:
+    """Build the OAuth redirect URI from the request or env."""
+    if OAUTH_REDIRECT_URI:
+        return OAUTH_REDIRECT_URI
+    # Auto-detect from the incoming request
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.url.netloc)
+    return f"{scheme}://{host}/auth/callback"
+
+
+def create_session_cookie(user_id: int) -> str:
+    """Create a signed session cookie value containing the user_id."""
+    return _serializer.dumps({"user_id": user_id})
+
+
+def decode_session_cookie(cookie_value: str) -> Optional[dict]:
+    """Decode and verify a session cookie. Returns payload or None."""
     try:
-        idinfo = id_token.verify_oauth2_token(
-            token, google_requests.Request(), GOOGLE_CLIENT_ID
-        )
-        if idinfo["iss"] not in ("accounts.google.com", "https://accounts.google.com"):
-            raise ValueError("Invalid issuer")
-        return idinfo
-    except ValueError as e:
-        logger.warning(f"Google token verification failed: {e}")
-        raise HTTPException(401, f"Invalid Google token: {e}")
+        return _serializer.loads(cookie_value, max_age=SESSION_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        return None
 
 
-def create_jwt(user_id: int, email: str) -> str:
-    """Create a JWT for the given user."""
-    payload = {
-        "user_id": user_id,
-        "email": email,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_EXPIRY_HOURS),
-        "iat": datetime.datetime.utcnow(),
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-
-def decode_jwt(token: str) -> dict:
-    """Decode and verify a JWT. Raises HTTPException on failure."""
-    try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(401, "Token expired")
-    except jwt.InvalidTokenError as e:
-        raise HTTPException(401, f"Invalid token: {e}")
+def get_user_from_request(request: Request, db: Session) -> Optional[User]:
+    """Extract user from session cookie if present and valid."""
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    if not cookie:
+        return None
+    payload = decode_session_cookie(cookie)
+    if not payload or "user_id" not in payload:
+        return None
+    user = db.query(User).filter(User.id == payload["user_id"]).first()
+    return user
 
 
 def get_current_user(
-    authorization: Optional[str] = Header(None),
+    request: Request,
     db: Session = Depends(get_db),
 ) -> User:
-    """FastAPI dependency: requires a valid JWT and returns the User. 401 if missing/invalid."""
+    """FastAPI dependency: requires a valid session and returns the User. 401 if missing/invalid."""
     if not auth_enabled():
         raise HTTPException(503, "Auth not configured")
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Missing authorization header")
-    token = authorization.split(" ", 1)[1]
-    payload = decode_jwt(token)
-    user = db.query(User).filter(User.id == payload["user_id"]).first()
+    user = get_user_from_request(request, db)
     if not user:
-        raise HTTPException(401, "User not found")
+        raise HTTPException(401, "Not authenticated")
     return user
 
 
 def get_optional_user(
-    authorization: Optional[str] = Header(None),
+    request: Request,
     db: Session = Depends(get_db),
 ) -> Optional[User]:
-    """FastAPI dependency: returns User if valid JWT present, None otherwise.
+    """FastAPI dependency: returns User if valid session present, None otherwise.
     Used for gradual migration - endpoints still work without auth."""
     if not auth_enabled():
         return None
-    if not authorization or not authorization.startswith("Bearer "):
-        return None
-    try:
-        token = authorization.split(" ", 1)[1]
-        payload = decode_jwt(token)
-        user = db.query(User).filter(User.id == payload["user_id"]).first()
-        return user
-    except Exception:
-        return None
+    return get_user_from_request(request, db)

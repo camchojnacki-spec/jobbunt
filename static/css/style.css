@@ -746,6 +746,9 @@ body::before {
     transition: opacity 0.15s;
 }
 .job-list-row:hover .list-actions { opacity: 1; }
+@media (hover: none) {
+    .list-actions { opacity: 1; }
+}
 
 .list-action-btn {
     width: 28px;

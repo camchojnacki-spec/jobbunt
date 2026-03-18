@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jobbunt - Sign In</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --jb-bg-deep: #090E18;
+            --jb-bg-primary: #0D1B30;
+            --jb-bg-secondary: #111F38;
+            --jb-bg-tertiary: #162744;
+            --jb-bg-elevated: #1A2F50;
+            --jb-text-1: #E0E6ED;
+            --jb-text-2: #8A9BB5;
+            --jb-text-3: #566A87;
+            --jb-bright: #4A90D9;
+            --jb-bright-light: #6BAAEB;
+            --jb-red: #E8291C;
+            --jb-royal: #134A8E;
+            --jb-border: rgba(74,144,217,.08);
+            --jb-font: 'Outfit', sans-serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--jb-font);
+            background: var(--jb-bg-deep);
+            color: var(--jb-text-1);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-image: radial-gradient(circle at 50% 40%, rgba(19, 74, 142, 0.15) 0%, transparent 60%);
+        }
+
+        .login-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 24px;
+            padding: 56px 48px;
+            background: var(--jb-bg-primary);
+            border: 1px solid var(--jb-border);
+            border-radius: 24px;
+            max-width: 420px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .login-logo {
+            height: 64px;
+            width: auto;
+        }
+
+        .login-title {
+            font-size: 1.5rem;
+            font-weight: 300;
+            color: var(--jb-text-1);
+            letter-spacing: -0.5px;
+        }
+
+        .login-subtitle {
+            font-size: 0.95rem;
+            font-weight: 300;
+            color: var(--jb-text-2);
+            line-height: 1.6;
+            margin-top: -8px;
+        }
+
+        .baseball-flavor {
+            font-size: 0.85rem;
+            color: var(--jb-text-3);
+            font-style: italic;
+            margin-top: -12px;
+        }
+
+        .divider {
+            width: 48px;
+            height: 1px;
+            background: var(--jb-border);
+        }
+
+        .google-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 28px;
+            background: var(--jb-bg-elevated);
+            border: 1px solid rgba(74,144,217,.15);
+            border-radius: 12px;
+            color: var(--jb-text-1);
+            font-family: var(--jb-font);
+            font-size: 0.95rem;
+            font-weight: 400;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .google-btn:hover {
+            background: var(--jb-bg-secondary);
+            border-color: var(--jb-bright);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(74,144,217,.15);
+        }
+
+        .google-btn:active {
+            transform: translateY(0);
+        }
+
+        .google-btn svg {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
+        .footer-text {
+            font-size: 0.75rem;
+            color: var(--jb-text-3);
+            margin-top: 8px;
+        }
+
+        /* Subtle animated diamond accent */
+        .diamond-accent {
+            position: fixed;
+            opacity: 0.03;
+            pointer-events: none;
+        }
+        .diamond-accent.top-right {
+            top: 10%;
+            right: 10%;
+            width: 120px;
+            height: 120px;
+            transform: rotate(45deg);
+            border: 2px solid var(--jb-bright);
+        }
+        .diamond-accent.bottom-left {
+            bottom: 15%;
+            left: 8%;
+            width: 80px;
+            height: 80px;
+            transform: rotate(45deg);
+            border: 2px solid var(--jb-red);
+        }
+    </style>
+</head>
+<body>
+    <div class="diamond-accent top-right"></div>
+    <div class="diamond-accent bottom-left"></div>
+
+    <div class="login-card">
+        <img src="/static/logo-dark.svg" alt="Jobbunt" class="login-logo">
+
+        <h1 class="login-title">Step up to the plate</h1>
+        <p class="login-subtitle">
+            Your AI-powered job search dugout. Scout opportunities,
+            swing at the right ones, and let the agent handle the paperwork.
+        </p>
+        <p class="baseball-flavor">"You miss 100% of the jobs you don't apply for."</p>
+
+        <div class="divider"></div>
+
+        <a href="/auth/login" class="google-btn">
+            <svg viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            Sign in with Google
+        </a>
+
+        <p class="footer-text">Secure authentication via Google OAuth 2.0</p>
+    </div>
+</body>
+</html>

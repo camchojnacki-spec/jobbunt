@@ -247,10 +247,22 @@ async def search_indeed(query: str, location: str, limit: int = 25) -> list[dict
     """Scrape Indeed search results — tries multiple approaches for reliability.
 
     Approach order:
-    1. Indeed RSS feed (most reliable, no anti-scraping)
+    0. SerpAPI Indeed engine (if SERPAPI_KEY configured — most reliable)
+    1. Indeed RSS feed with ca.indeed.com priority for Canadian searches
     2. Direct HTML scrape with fresh client + cookies
     3. Embedded JSON extraction from mosaic provider data
     """
+    # ── Method 0: SerpAPI Indeed (bypasses all anti-scraping) ──
+    serpapi_key = os.environ.get("SERPAPI_KEY") or _get_source_config().get("serpapi", {}).get("api_key", "")
+    if serpapi_key:
+        try:
+            serpapi_results = await search_serpapi_indeed(query, location, limit)
+            if serpapi_results:
+                logger.info(f"Indeed via SerpAPI: {len(serpapi_results)} results")
+                return serpapi_results
+        except Exception as e:
+            logger.debug(f"Indeed SerpAPI attempt failed: {e}")
+
     jobs = []
     # Detect which Indeed domain to try
     loc_lower = location.lower()
@@ -367,21 +379,27 @@ async def _indeed_rss(domain: str, query: str, location: str, limit: int) -> lis
     # Strip negative keyword operators — RSS feeds don't support boolean -"keyword"
     clean_query = re.sub(r'\s*-"[^"]*"', '', query).strip()
     params = {"q": clean_query, "l": location, "limit": str(min(limit, 25)), "fromage": "14", "sort": "date"}
+    # Use realistic RSS reader headers (not browser headers) — RSS endpoints
+    # are less suspicious when the request looks like an actual RSS reader
     headers = {
-        "User-Agent": random.choice(_USER_AGENTS),
-        "Accept": "application/rss+xml, application/xml, text/xml, */*",
+        "User-Agent": "Mozilla/5.0 (compatible; Feedfetcher-Google; +http://www.google.com/feedfetcher.html)",
+        "Accept": "application/rss+xml, application/xml, text/xml, application/atom+xml, */*;q=0.1",
         "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control": "no-cache",
+        "Accept-Encoding": "gzip, deflate",
         "Connection": "keep-alive",
     }
 
-    # Try multiple RSS URL patterns
+    # Try multiple RSS URL patterns — path-based URL is less likely to be blocked
+    # e.g., ca.indeed.com/rss/q-QUERY-l-LOCATION-jobs
+    encoded_q = clean_query.replace(" ", "+")
+    encoded_l = location.replace(" ", "+").replace(",", "%2C")
     rss_paths = [
-        f"https://{domain}/rss",
-        f"https://{domain}/jobs/rss",
+        (f"https://{domain}/rss/q-{encoded_q}-l-{encoded_l}-jobs", {}),
+        (f"https://{domain}/rss", params),
+        (f"https://{domain}/jobs/rss", params),
     ]
 
-    for rss_url in rss_paths:
+    for rss_url, rss_params in rss_paths:
         if jobs:
             break
         await _rate_limit_delay_for_domain(domain)
@@ -390,7 +408,7 @@ async def _indeed_rss(domain: str, query: str, location: str, limit: int) -> lis
         resp_text = None
         try:
             async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
-                resp = await client.get(rss_url, params=params, headers=headers)
+                resp = await client.get(rss_url, params=rss_params, headers=headers)
                 if resp.status_code == 429:
                     logger.warning(f"Indeed RSS ({rss_url}) returned 429 — rate limited, trying next pattern")
                     await asyncio.sleep(3.0 + random.random() * 2.0)
@@ -1900,18 +1918,17 @@ async def _search_with_fallback(source_key: str, query: str, location: str, limi
     if source_key == "adzuna" and not adzuna_key:
         return []
 
-    # If Indeed is requested and SerpAPI key is available, use SerpAPI Indeed engine
+    # If Indeed is requested and SerpAPI key is available, prefer SerpAPI
+    # (Indeed's direct scraping/RSS is consistently blocked with 403/429)
     if source_key == "indeed" and serpapi_key:
-        indeed_cfg = cfg.get("indeed", {})
-        if indeed_cfg.get("method") == "serpapi":
-            try:
-                results = await search_serpapi_indeed(query, location, limit)
-                if results:
-                    _record_source_success("indeed", len(results))
-                    return results
-            except Exception as e:
-                logger.warning(f"[indeed] SerpAPI Indeed fallback failed: {e}")
-            # Fall through to normal Indeed scraping if SerpAPI fails
+        try:
+            results = await search_serpapi_indeed(query, location, limit)
+            if results:
+                _record_source_success("indeed", len(results))
+                return results
+            logger.info("[indeed] SerpAPI Indeed returned 0 results, falling through to direct scraping")
+        except Exception as e:
+            logger.warning(f"[indeed] SerpAPI Indeed failed: {e}, falling through to direct scraping")
 
     # Check source health — skip temporarily broken sources
     if not _is_source_healthy(source_key):
