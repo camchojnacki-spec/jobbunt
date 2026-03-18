@@ -38,6 +38,7 @@ let state = {
     tags: { roles: [], locations: [], skills: [] },
     parsedProfile: null,
     profileMode: 'paste',
+    authUser: null,
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────
@@ -48,6 +49,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupKeyboard();
     setupFormHandlers();
     setupActionButtons();
+    // Fetch auth user (Google profile picture, name)
+    try {
+        const authUser = await api('/auth/me').catch(() => null);
+        if (authUser) {
+            state.authUser = authUser;
+            // Auto-claim unclaimed profiles on first login
+            try { await api('/auth/claim-profiles', { method: 'POST' }); } catch(e) { /* ok */ }
+        }
+    } catch(e) { /* auth not enabled or not logged in */ }
     await loadProfile();
 });
 
@@ -4366,9 +4376,32 @@ function getProfileInitials(profile) {
 
 function updateNavAvatar() {
     const el = document.getElementById('avatar-initials');
-    if (el) el.textContent = getProfileInitials(state.profile);
+    const avatarImg = document.getElementById('avatar-img');
     const nameEl = document.getElementById('dropdown-profile-name');
-    if (nameEl) nameEl.textContent = state.profile?.name || 'No Profile';
+
+    // Use Google picture if available
+    if (state.authUser?.picture_url) {
+        if (el) el.style.display = 'none';
+        if (!avatarImg) {
+            // Create img element inside profile-avatar
+            const container = document.getElementById('profile-avatar');
+            if (container) {
+                const img = document.createElement('img');
+                img.id = 'avatar-img';
+                img.src = state.authUser.picture_url;
+                img.alt = state.authUser.name || '';
+                img.style.cssText = 'width:100%;height:100%;border-radius:50%;object-fit:cover;';
+                container.appendChild(img);
+            }
+        } else {
+            avatarImg.src = state.authUser.picture_url;
+        }
+    } else {
+        if (el) { el.style.display = ''; el.textContent = getProfileInitials(state.profile); }
+        if (avatarImg) avatarImg.remove();
+    }
+
+    if (nameEl) nameEl.textContent = state.authUser?.name || state.profile?.name || 'No Profile';
 }
 
 function populateProfileDropdown(profiles) {
