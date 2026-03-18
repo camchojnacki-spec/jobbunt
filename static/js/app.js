@@ -426,7 +426,7 @@ async function searchJobs() {
     state.searching = true;
 
     // Disable all search buttons and show loading
-    const searchBtns = document.querySelectorAll('#btn-search-jobs, #btn-search-more');
+    const searchBtns = document.querySelectorAll('#btn-search-jobs, #btn-search-more, #btn-search-empty');
     searchBtns.forEach(btn => {
         btn.disabled = true;
         btn._origText = btn.textContent;
@@ -482,7 +482,7 @@ async function searchJobs() {
 
         await loadSwipeStack();
         loadStats();
-        showView('swipe');
+        showView('hunt');
     } catch (e) {
         toast('Search failed: ' + e.message, 'error');
     } finally {
@@ -4932,17 +4932,23 @@ async function _doImproveResume(el) {
 // ── Reporter Corner ─────────────────────────────────────────────────────
 
 const REPORTER_QUESTIONS = [
-    // Profile-filling questions that actually help search & matching
-    { q: "What's your preferred work setup?", choices: ["Fully remote", "Hybrid (2-3 days in office)", "On-site", "No preference"], profileField: "remote_preference", mapTo: { "Fully remote": "remote", "Hybrid (2-3 days in office)": "hybrid", "On-site": "onsite", "No preference": "any" } },
-    { q: "What seniority level are you targeting?", choices: ["Manager / Senior Manager", "Director", "VP / SVP", "C-Suite (CISO, CTO, etc.)"], profileField: "seniority_level", mapTo: { "Manager / Senior Manager": "senior", "Director": "director", "VP / SVP": "vp", "C-Suite (CISO, CTO, etc.)": "c-suite" } },
-    { q: "What's your minimum salary expectation?", choices: ["$100K - $130K", "$130K - $160K", "$160K - $200K", "$200K+"], profileField: "min_salary", mapTo: { "$100K - $130K": "100000", "$130K - $160K": "130000", "$160K - $200K": "160000", "$200K+": "200000" } },
-    { q: "What industries interest you most?", choices: ["Financial Services / Banking", "Tech / SaaS", "Government / Public Sector", "Healthcare / Pharma"], profileField: "industry_preference" },
-    { q: "Are you open to contract or consulting roles?", choices: ["Permanent only", "Open to contract", "Prefer contract / consulting", "No preference"], profileField: "employment_type" },
-    { q: "How far are you willing to commute?", choices: ["Under 30 min", "30 - 60 min", "Over 60 min if needed", "Remote only"], profileField: "commute_tolerance" },
-    { q: "Would you consider roles that require relocation?", choices: ["Yes, anywhere", "Yes, within my country", "Only for the right role", "No, staying put"], profileField: "relocation" },
-    { q: "What size company do you prefer?", choices: ["Startup (< 50 people)", "Mid-size (50 - 500)", "Large enterprise (500+)", "No preference"], profileField: "company_size" },
-    { q: "How soon are you looking to start?", choices: ["Immediately", "Within 1 month", "2 - 3 months", "Just exploring"], profileField: "availability" },
-    { q: "What matters most in your next role?", choices: ["Compensation & benefits", "Growth & title advancement", "Mission & impact", "Work-life balance"], profileField: "top_priority" },
+    // ── Profile-filling questions first (these update actual profile fields) ──
+    { q: "What's your preferred work setup?", choices: ["Fully remote", "Hybrid (2-3 days in office)", "On-site", "No preference"], profileField: "remote_preference", mapTo: { "Fully remote": "remote", "Hybrid (2-3 days in office)": "hybrid", "On-site": "onsite", "No preference": "any" }, fillsProfile: true },
+    { q: "What seniority level are you targeting?", choices: ["Manager / Senior Manager", "Director", "VP / SVP", "C-Suite (CISO, CTO, etc.)"], profileField: "seniority_level", mapTo: { "Manager / Senior Manager": "senior", "Director": "director", "VP / SVP": "vp", "C-Suite (CISO, CTO, etc.)": "c-suite" }, fillsProfile: true },
+    { q: "What's your minimum salary expectation?", choices: ["$100K - $130K", "$130K - $160K", "$160K - $200K", "$200K+"], profileField: "min_salary", mapTo: { "$100K - $130K": "100000", "$130K - $160K": "130000", "$160K - $200K": "160000", "$200K+": "200000" }, fillsProfile: true },
+    { q: "What industries interest you most?", choices: ["Financial Services / Banking", "Tech / SaaS", "Government / Public Sector", "Healthcare / Pharma"], profileField: "industry_preference", fillsProfile: true },
+    { q: "Are you open to contract or consulting roles?", choices: ["Permanent only", "Open to contract", "Prefer contract / consulting", "No preference"], profileField: "employment_type", fillsProfile: true },
+    { q: "How far are you willing to commute?", choices: ["Under 30 min", "30 - 60 min", "Over 60 min if needed", "Remote only"], profileField: "commute_tolerance", fillsProfile: true },
+    { q: "Would you consider roles that require relocation?", choices: ["Yes, anywhere", "Yes, within my country", "Only for the right role", "No, staying put"], profileField: "relocation", fillsProfile: true },
+    { q: "What size company do you prefer?", choices: ["Startup (< 50 people)", "Mid-size (50 - 500)", "Large enterprise (500+)", "No preference"], profileField: "company_size", fillsProfile: true },
+    { q: "How soon are you looking to start?", choices: ["Immediately", "Within 1 month", "2 - 3 months", "Just exploring"], profileField: "availability", fillsProfile: true },
+    { q: "What matters most in your next role?", choices: ["Compensation & benefits", "Growth & title advancement", "Mission & impact", "Work-life balance"], profileField: "top_priority", fillsProfile: true },
+    // ── General scouting questions (personality & preferences) ──
+    { q: "What's your ideal work environment?", choices: ["Remote-first startup", "Hybrid corporate", "Small team, big impact", "Enterprise with clear structure"], profileField: "ideal_culture" },
+    { q: "What motivates you most?", choices: ["Solving hard problems", "Building teams", "Making an impact", "Learning new tech"], profileField: "values" },
+    { q: "What's your biggest strength?", choices: ["Technical depth", "Strategic thinking", "People leadership", "Cross-functional communication"], profileField: "strengths" },
+    { q: "How do you prefer to grow?", choices: ["Hands-on projects", "Mentorship", "Formal training", "Stretch assignments"], profileField: "growth_areas" },
+    { q: "What's a deal-breaker for you?", choices: ["Micromanagement", "No remote option", "Below-market pay", "Toxic culture"], profileField: "deal_breakers" },
 ];
 
 let _reporterQuestionIndex = 0;
