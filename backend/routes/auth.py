@@ -41,7 +41,7 @@ def auth_config():
 @router.get("/login")
 async def login(request: Request):
     """Redirect to Google's OAuth consent screen."""
-    if not auth_enabled():
+    if not auth_enabled() and not request.query_params.get("force"):
         return RedirectResponse("/")
 
     redirect_uri = get_redirect_uri(request)
@@ -55,6 +55,24 @@ async def login(request: Request):
     }
     url = f"{GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}"
     return RedirectResponse(url)
+
+
+@router.get("/dev-login")
+async def dev_login(request: Request):
+    """Dev-only: trigger Google OAuth even when DEV_SKIP_AUTH is set, to capture profile photo."""
+    if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+        redirect_uri = get_redirect_uri(request)
+        params = {
+            "client_id": GOOGLE_CLIENT_ID,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "access_type": "offline",
+            "prompt": "select_account",
+        }
+        url = f"{GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}"
+        return RedirectResponse(url)
+    return JSONResponse({"error": "Google OAuth not configured"}, status_code=400)
 
 
 @router.get("/callback")
@@ -155,8 +173,27 @@ async def logout():
 
 
 @router.get("/me")
-def get_me(user: User = Depends(get_current_user)):
-    """Return current user info."""
+def get_me(request: Request, db: Session = Depends(get_db)):
+    """Return current user info. In dev mode, returns first user or a dev stub."""
+    if not auth_enabled():
+        # Dev mode — return first user if exists, or a dev stub
+        user = db.query(User).first()
+        if user:
+            return {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "picture_url": user.picture_url,
+            }
+        # No user yet — return a stub so the app doesn't break
+        return {
+            "id": 0,
+            "email": "dev@localhost",
+            "name": "Dev User",
+            "picture_url": None,
+        }
+    # Production — require valid session
+    user = get_current_user(request, db)
     return {
         "id": user.id,
         "email": user.email,
@@ -166,8 +203,15 @@ def get_me(user: User = Depends(get_current_user)):
 
 
 @router.post("/claim-profiles")
-def claim_profiles(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def claim_profiles(request: Request, db: Session = Depends(get_db)):
     """Claim all unclaimed profiles (user_id IS NULL) for the current user."""
+    if not auth_enabled():
+        # Dev mode — use first user if exists
+        user = db.query(User).first()
+        if not user:
+            return {"claimed": 0}
+    else:
+        user = get_current_user(request, db)
     unclaimed = db.query(Profile).filter(Profile.user_id.is_(None)).all()
     claimed_count = 0
     for profile in unclaimed:
