@@ -4074,6 +4074,33 @@ body::before {
     background: var(--bg-card-hover);
 }
 
+.dropdown-create-new {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent-light);
+}
+
+.dropdown-create-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent-dim);
+    color: var(--accent-light);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.dropdown-create-new:hover .dropdown-create-icon {
+    background: var(--accent);
+    color: var(--void);
+}
+
 /* ── Job Filter Bar ── */
 .job-filter-bar {
     display: flex;

@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260317b">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260317c">
     <script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
@@ -80,6 +80,10 @@
                         <div class="dropdown-divider"></div>
                         <button class="dropdown-item" onclick="showView('profile');switchProfileTab('profile');closeProfileDropdown()">Edit Profile</button>
                         <button class="dropdown-item" onclick="showView('profile');switchProfileTab('settings');closeProfileDropdown()">Settings</button>
+                        <div class="dropdown-divider"></div>
+                        <button class="dropdown-item dropdown-create-new" onclick="createNewProfile()">
+                            <span class="dropdown-create-icon">+</span> Create New Profile
+                        </button>
                         <button class="dropdown-item dropdown-signout" id="dropdown-signout" onclick="logout();closeProfileDropdown()" style="display:none">Sign Out</button>
                     </div>
                 </div>

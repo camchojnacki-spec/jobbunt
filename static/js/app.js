@@ -137,12 +137,14 @@ function showView(name) {
 async function loadProfile() {
     try {
         const profiles = await api('/profiles');
+        populateProfileDropdown(profiles);
         if (profiles.length > 0) {
             state.profile = profiles[0];
             state.profileId = profiles[0].id;
             state.tags.roles = profiles[0].target_roles || [];
             state.tags.locations = profiles[0].target_locations || [];
             state.tags.skills = profiles[0].skills || [];
+            updateNavAvatar();
             try {
                 if (state.profile.has_profile_doc) {
                     setProfileMode('paste');
@@ -264,6 +266,8 @@ async function confirmParsedProfile() {
 
         document.getElementById('no-profile-state').style.display = 'none';
         document.getElementById('parsed-preview').style.display = 'none';
+        updateNavAvatar();
+        try { const ps = await api('/profiles'); populateProfileDropdown(ps); } catch(e) { /* ok */ }
     } catch (e) {
         toast('Failed to save profile: ' + e.message, 'error');
     }
@@ -346,6 +350,8 @@ async function saveProfile() {
         }
 
         document.getElementById('no-profile-state').style.display = 'none';
+        updateNavAvatar();
+        try { const ps = await api('/profiles'); populateProfileDropdown(ps); } catch(e) { /* ok */ }
     } catch (e) {
         toast('Failed to save profile: ' + e.message, 'error');
     }
@@ -4347,6 +4353,93 @@ document.addEventListener('click', (e) => {
     if (menu && !menu.contains(e.target)) closeProfileDropdown();
 });
 
+// ── Profile Switcher ────────────────────────────────────────────────────
+
+function getProfileInitials(profile) {
+    if (!profile?.name) return '?';
+    const parts = profile.name.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return parts[0][0]?.toUpperCase() || '?';
+}
+
+function updateNavAvatar() {
+    const el = document.getElementById('avatar-initials');
+    if (el) el.textContent = getProfileInitials(state.profile);
+    const nameEl = document.getElementById('dropdown-profile-name');
+    if (nameEl) nameEl.textContent = state.profile?.name || 'No Profile';
+}
+
+function populateProfileDropdown(profiles) {
+    const container = document.getElementById('dropdown-profiles');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!profiles || profiles.length === 0) return;
+
+    profiles.forEach(p => {
+        const item = document.createElement('div');
+        item.className = 'dropdown-profile-item' + (p.id === state.profileId ? ' active' : '');
+        const initials = getProfileInitials(p);
+        item.innerHTML = `<span class="profile-item-avatar">${initials}</span><span>${p.name || 'Unnamed'}</span>`;
+        item.addEventListener('click', () => switchProfile(p.id));
+        container.appendChild(item);
+    });
+}
+
+async function switchProfile(profileId) {
+    if (profileId === state.profileId) {
+        closeProfileDropdown();
+        return;
+    }
+    try {
+        const result = await api('/profiles/select', { method: 'POST', body: { profile_id: profileId } });
+        state.profile = result;
+        state.profileId = result.id;
+        state.tags.roles = result.target_roles || [];
+        state.tags.locations = result.target_locations || [];
+        state.tags.skills = result.skills || [];
+        updateNavAvatar();
+        // Refresh dropdown to mark the new active profile
+        const profiles = await api('/profiles');
+        populateProfileDropdown(profiles);
+        closeProfileDropdown();
+        toast(`Switched to ${result.name || 'profile'}`, 'success');
+        // Reload current view
+        const activeView = document.querySelector('.view.active');
+        if (activeView) {
+            const viewName = activeView.id.replace('view-', '');
+            showView(viewName);
+        }
+    } catch (e) {
+        toast('Failed to switch profile: ' + e.message, 'error');
+    }
+}
+
+function createNewProfile() {
+    closeProfileDropdown();
+    // Clear current profile state so saveProfile creates a new one
+    state.profileId = null;
+    state.profile = null;
+    state.tags.roles = [];
+    state.tags.locations = [];
+    state.tags.skills = [];
+    // Navigate to profile view with empty form
+    showView('profile');
+    switchProfileTab('profile');
+    // Clear the form fields
+    const fields = ['f-name', 'f-email', 'f-phone', 'f-location', 'f-min-salary', 'f-experience', 'f-cover-template'];
+    fields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    const remoteEl = document.getElementById('f-remote');
+    if (remoteEl) remoteEl.value = 'any';
+    renderTags('roles');
+    renderTags('locations');
+    renderTags('skills');
+    updateNavAvatar();
+    toast('Fill in your new profile details', 'info');
+}
+
 function toggleImportSection() {
     const el = document.getElementById('profile-paste-mode');
     if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
@@ -4798,6 +4891,8 @@ window.skipLogin = skipLogin;
 window.logout = logout;
 window.toggleProfileDropdown = toggleProfileDropdown;
 window.closeProfileDropdown = closeProfileDropdown;
+window.switchProfile = switchProfile;
+window.createNewProfile = createNewProfile;
 window.toggleImportSection = toggleImportSection;
 window.switchPipelineTab = switchPipelineTab;
 window.switchIntelTab = switchIntelTab;
