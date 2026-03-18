@@ -171,15 +171,15 @@ body::before {
 }
 .nav-link:hover {
     color: var(--jb-text-1);
-    background: rgba(74,144,217,.08);
+    background: rgba(255,255,255,.05);
 }
 .nav-link:hover svg { opacity: 1; }
 .nav-link.active {
-    color: var(--jb-bright);
-    background: var(--jb-info-s);
+    color: var(--jb-text-1);
+    background: rgba(255,255,255,.06);
     font-weight: 600;
 }
-.nav-link.active svg { opacity: 1; stroke: var(--jb-bright); }
+.nav-link.active svg { opacity: 1; stroke: var(--jb-text-1); }
 .nav-link.active::after {
     content: '';
     position: absolute;
@@ -1659,6 +1659,26 @@ body::before {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--bg-section);
+}
+
+/* Resume drop zone */
+.resume-drop-zone {
+    border: 2px dashed var(--border-hover);
+    border-radius: var(--radius);
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--bg);
+}
+.resume-drop-zone:hover {
+    border-color: var(--jb-bright);
+    background: rgba(74, 144, 217, 0.05);
+}
+.resume-drop-zone.has-file {
+    border-color: var(--jb-green, #4caf50);
+    border-style: solid;
+    background: rgba(76, 175, 80, 0.05);
 }
 
 /* Section grouping */

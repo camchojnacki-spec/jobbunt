@@ -395,7 +395,7 @@ async def upload_resume(profile_id: int, file: UploadFile = File(...), db: Sessi
     profile.resume_text = resume_text
     db.commit()
 
-    return {"message": "Resume uploaded", "text_length": len(resume_text)}
+    return {"message": "Resume uploaded", "text_length": len(resume_text), "resume_text": resume_text}
 
 
 @router.post("/profiles/{profile_id}/reparse-resume")

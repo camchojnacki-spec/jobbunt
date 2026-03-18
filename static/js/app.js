@@ -195,16 +195,61 @@ function setProfileMode(mode) {
     }
 }
 
+function handleResumeSelected(input) {
+    const zone = document.getElementById('resume-drop-zone');
+    const label = document.getElementById('resume-drop-label');
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        if (zone) zone.classList.add('has-file');
+        if (label) label.textContent = file.name;
+    }
+}
+
 async function parseAndSaveProfile() {
+    const fileInput = document.getElementById('f-resume-paste');
     const text = document.getElementById('f-paste-text').value.trim();
-    if (!text) { toast('Please paste your profile document first', 'error'); return; }
+    const hasFile = fileInput && fileInput.files && fileInput.files[0];
+
+    if (!text && !hasFile) {
+        toast('Upload a resume or paste your resume text to get started', 'error');
+        return;
+    }
 
     const btn = document.getElementById('btn-parse-profile');
-    btn.textContent = 'Parsing...';
-    btn.disabled = true;
+    setButtonLoading(btn, true);
 
     try {
-        const parsed = await api('/profiles/parse', { method: 'POST', body: { text } });
+        let parseText = text;
+
+        // If file uploaded, upload it first then use resume text for parsing
+        if (hasFile) {
+            // Create a temporary profile if none exists
+            if (!state.profileId) {
+                const tempName = state.authUser?.name || 'New Player';
+                const newProfile = await api('/profiles', {
+                    method: 'POST',
+                    body: { name: tempName }
+                });
+                state.profile = newProfile;
+                state.profileId = newProfile.id;
+            }
+            // Upload the resume file
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            const uploadResp = await api(`/profiles/${state.profileId}/resume`, {
+                method: 'POST',
+                body: formData
+            });
+            // Use the parsed resume text for profile extraction
+            parseText = uploadResp.resume_text || text || '';
+        }
+
+        if (!parseText) {
+            toast('Could not extract text from resume. Try pasting it instead.', 'error');
+            return;
+        }
+
+        const parsed = await api('/profiles/parse', { method: 'POST', body: { text: parseText } });
         state.parsedProfile = parsed;
 
         const preview = document.getElementById('parsed-preview');
@@ -213,23 +258,20 @@ async function parseAndSaveProfile() {
         content.innerHTML = `
             <div style="display:grid; gap:8px">
                 <div><strong style="color:var(--accent-light)">Name:</strong> ${esc(parsed.name || 'Not found')}</div>
-                <div><strong style="color:var(--accent-light)">Email:</strong> ${esc(parsed.email || 'Not found')}</div>
-                <div><strong style="color:var(--accent-light)">Phone:</strong> ${esc(parsed.phone || 'Not found')}</div>
                 <div><strong style="color:var(--accent-light)">Location:</strong> ${esc(parsed.location || 'Not found')}</div>
-                <div><strong style="color:var(--accent-light)">Target Roles:</strong> ${(parsed.target_roles || []).map(r => `<span class="reason-tag">${esc(r)}</span>`).join(' ') || 'None'}</div>
-                <div><strong style="color:var(--accent-light)">Skills:</strong> ${(parsed.skills || []).map(s => `<span class="reason-tag">${esc(s)}</span>`).join(' ') || 'None'}</div>
-                <div><strong style="color:var(--accent-light)">Salary:</strong> ${parsed.min_salary ? `$${parsed.min_salary.toLocaleString()} - $${(parsed.max_salary || parsed.min_salary).toLocaleString()}` : 'Not found'}</div>
+                <div><strong style="color:var(--accent-light)">Target Roles:</strong> ${(parsed.target_roles || []).map(r => `<span class="reason-tag">${esc(r)}</span>`).join(' ') || 'None detected — you can add them below'}</div>
+                <div><strong style="color:var(--accent-light)">Skills:</strong> ${(parsed.skills || []).map(s => `<span class="reason-tag">${esc(s)}</span>`).join(' ') || 'None detected'}</div>
                 <div><strong style="color:var(--accent-light)">Experience:</strong> ${parsed.experience_years ? parsed.experience_years + ' years' : 'Not found'}</div>
             </div>
+            <p style="margin-top:10px;font-size:12px;color:var(--jb-text-dim)">You can fine-tune everything in the form below after saving.</p>
         `;
 
         preview.style.display = 'block';
-        toast('Profile parsed! Review below and confirm.', 'success');
+        toast('Resume scanned! Review and confirm below.', 'success');
     } catch (e) {
-        toast('Parse failed: ' + e.message, 'error');
+        toast('Scan failed: ' + e.message, 'error');
     } finally {
-        btn.textContent = 'Parse & Save Profile';
-        btn.disabled = false;
+        setButtonLoading(btn, false);
     }
 }
 

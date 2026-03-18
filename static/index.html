@@ -133,7 +133,7 @@
                             </div>
                         </div>
                         <h1 class="dugout-hero-title">Make <span class="dugout-hero-accent">contact.</span></h1>
-                        <p class="dugout-hero-subtitle">Track every at-bat. Get on base.</p>
+                        <p class="dugout-hero-subtitle">AI-powered job search. Better interviews. Smarter applications.</p>
                     </div>
 
                     <!-- Season Stats Row -->
@@ -663,48 +663,58 @@
                 <!-- ── Profile Tab Content ── -->
                 <div class="profile-tab-content active" id="profile-tab-content-profile">
                 <div class="profile-form">
-                    <!-- Profile header row with title + import button -->
+                    <!-- Profile header row -->
                     <div class="profile-header-row">
                         <div>
-                            <h2 class="profile-title">Profile</h2>
-                            <p class="profile-subtitle">Powers job matching and auto-applications</p>
+                            <h2 class="profile-title">Player Card</h2>
+                            <p class="profile-subtitle">Build your profile to get matched with roles that actually fit</p>
                         </div>
-                        <button class="btn-import-link" id="btn-toggle-import" onclick="toggleImportSection()" title="Import from resume or document">
-                            <span class="btn-import-icon">↑</span> Import
-                        </button>
                     </div>
 
-                    <!-- Import panel (collapsible, compact) -->
-                    <div id="profile-paste-mode" style="display:none" class="profile-import-panel">
+                    <!-- ═══ STEP 1: Resume Upload (always visible, primary CTA) ═══ -->
+                    <div class="profile-section" id="resume-upload-section">
+                        <div class="profile-section-header">Step 1: Drop Your Resume</div>
+                        <p style="color:var(--text-dim);font-size:13px;margin-bottom:12px">Upload your resume and we'll auto-fill your profile. This is the fastest way to get started.</p>
                         <div class="form-group">
-                            <label>Paste your full profile document</label>
-                            <textarea id="f-paste-text" rows="6" placeholder="Paste your candidate profile document here..."></textarea>
+                            <div id="resume-drop-zone" class="resume-drop-zone" onclick="document.getElementById('f-resume-paste').click()">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--jb-text-dim)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:8px">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                                <div id="resume-drop-label" style="font-size:14px;font-weight:500;color:var(--jb-text-1)">Click to upload resume</div>
+                                <div style="font-size:12px;color:var(--jb-text-dim);margin-top:4px">PDF, DOCX, or TXT</div>
+                            </div>
+                            <input type="file" id="f-resume-paste" accept=".pdf,.docx,.doc,.txt" style="display:none" onchange="handleResumeSelected(this)">
                         </div>
-                        <div class="form-group">
-                            <label>Or upload a file (PDF, DOCX, TXT)</label>
-                            <input type="file" id="f-resume-paste" accept=".pdf,.docx,.doc,.txt" style="padding:6px">
+                        <div class="form-group" id="paste-fallback-group" style="margin-top:8px">
+                            <details>
+                                <summary style="font-size:12px;color:var(--jb-text-dim);cursor:pointer">Or paste your resume text</summary>
+                                <textarea id="f-paste-text" rows="5" placeholder="Paste resume text here..." style="margin-top:8px"></textarea>
+                            </details>
                         </div>
-                        <div class="btn-group">
-                            <button class="btn btn-primary btn-sm" id="btn-parse-profile" onclick="parseAndSaveProfile()">Parse &amp; Import</button>
-                            <button class="btn btn-secondary btn-sm" onclick="toggleImportSection()">Cancel</button>
+                        <div class="btn-group" style="margin-top:8px">
+                            <button class="btn btn-primary" id="btn-parse-profile" onclick="parseAndSaveProfile()">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                                Scan &amp; Build Profile
+                            </button>
                         </div>
                         <div id="parsed-preview" style="display:none; margin-top:12px">
-                            <h4 style="margin-bottom:8px; color:var(--text-bright); font-size:13px">Parsed Preview</h4>
+                            <h4 style="margin-bottom:8px; color:var(--text-bright); font-size:13px">We found this in your resume:</h4>
                             <div id="parsed-preview-content" style="background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; font-size:13px; line-height:1.6"></div>
                             <div class="btn-group" style="margin-top:10px">
-                                <button class="btn btn-success btn-sm" id="btn-confirm-parsed" onclick="confirmParsedProfile()">Apply to Form</button>
+                                <button class="btn btn-success btn-sm" id="btn-confirm-parsed" onclick="confirmParsedProfile()">Looks Good — Save It</button>
                             </div>
                         </div>
                     </div>
 
                     <!-- Readiness badge area (JS inserts readiness-panel here) -->
 
-                    <!-- Profile Form -->
+                    <!-- ═══ STEP 2: Profile Form (auto-filled from resume) ═══ -->
                     <form id="profile-form">
 
-                        <!-- ── Section: Contact Info ── -->
+                        <!-- ── Section: The Basics ── -->
                         <div class="profile-section">
-                            <div class="profile-section-header">Contact Info</div>
+                            <div class="profile-section-header">Step 2: The Basics</div>
+                            <p style="color:var(--text-dim);font-size:12px;margin-bottom:10px">Confirm or fill in your details — the more complete, the better your matches.</p>
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>Full Name</label>
@@ -721,15 +731,16 @@
                                     <input type="tel" id="f-phone" placeholder="555-123-4567">
                                 </div>
                                 <div class="form-group">
-                                    <label>Location</label>
+                                    <label>Home Field (Location)</label>
                                     <input type="text" id="f-location" placeholder="New York, NY">
                                 </div>
                             </div>
                         </div>
 
-                        <!-- ── Section: Search Criteria ── -->
+                        <!-- ── Section: What Position Are You Playing? ── -->
                         <div class="profile-section">
-                            <div class="profile-section-header">Search Criteria</div>
+                            <div class="profile-section-header">Step 3: What Position Are You Playing?</div>
+                            <p style="color:var(--text-dim);font-size:12px;margin-bottom:10px">Tell us what roles you're targeting and we'll scout the right opportunities.</p>
 
                             <div class="form-group" style="position:relative">
                                 <label>Target Job Titles <span class="label-hint">type to search · Enter to add</span></label>
@@ -807,10 +818,11 @@
 
                         <!-- ── Section: Application Materials ── -->
                         <div class="profile-section">
-                            <div class="profile-section-header">Application Materials</div>
+                            <div class="profile-section-header">Game Day Gear</div>
                             <div class="form-group">
-                                <label>Resume (PDF, DOCX, or TXT)</label>
+                                <label>Update Resume (PDF, DOCX, or TXT)</label>
                                 <input type="file" id="f-resume" accept=".pdf,.docx,.doc,.txt" style="padding:6px">
+                                <p style="color:var(--text-dim);font-size:11px;margin-top:4px">Already uploaded above? This lets you swap it out later.</p>
                             </div>
                             <div class="form-group">
                                 <label>Cover Letter Style Notes</label>
@@ -820,7 +832,8 @@
 
                         <!-- ── Section: Job Sources ── -->
                         <div class="profile-section">
-                            <div class="profile-section-header">Job Sources</div>
+                            <div class="profile-section-header">Scouting Networks</div>
+                            <p style="color:var(--text-dim);font-size:12px;margin-bottom:10px">Pick which job boards to scout for opportunities.</p>
                             <div id="source-selector" class="source-selector">
                                 <label class="source-chip"><input type="checkbox" value="linkedin" checked> LinkedIn</label>
                                 <label class="source-chip"><input type="checkbox" value="indeed" checked> Indeed</label>
@@ -841,20 +854,20 @@
                         </div>
                     </form>
 
-                    <!-- Interview Q&A Section -->
+                    <!-- Step 4: Tryout Questions -->
                     <div class="interview-section" id="interview-section">
-                        <div class="profile-section-header">Profile Interview</div>
-                        <p style="color:var(--text-dim); font-size:12px; margin-bottom:10px">Answer questions to improve cover letters, scoring, and application responses.</p>
+                        <div class="profile-section-header">Step 4: The Tryout</div>
+                        <p style="color:var(--text-dim); font-size:12px; margin-bottom:10px">Answer a few questions so our AI can find you better matches and write stronger applications. The more you share, the sharper your results.</p>
                         <div id="interview-container"></div>
                     </div>
 
                     <!-- Resume Improver Section -->
                     <div class="interview-section" id="resume-improver-section">
                         <div class="profile-section-header" style="display:flex;justify-content:space-between;align-items:center">
-                            Resume Improver
+                            Batting Cage
                             <button class="btn btn-sm btn-primary" onclick="improveResume()" id="improve-resume-btn">Improve My Resume</button>
                         </div>
-                        <p style="color:var(--text-dim); font-size:12px; margin-bottom:10px">AI-powered suggestions to strengthen your resume for ATS and recruiters.</p>
+                        <p style="color:var(--text-dim); font-size:12px; margin-bottom:10px">AI-powered suggestions to strengthen your resume so it gets past ATS filters and catches recruiter attention.</p>
                         <div id="resume-improver-container"></div>
                     </div>
 
