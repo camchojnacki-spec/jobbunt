@@ -1984,34 +1984,43 @@ async def _ai_expand_queries(profile: Profile, base_roles: list[str]) -> tuple[l
         from backend.services.ai import ai_generate_json
 
         profile_summary = getattr(profile, 'profile_summary', '') or ''
+        career_trajectory = getattr(profile, 'career_trajectory', '') or ''
         skills = _safe_json(profile.skills, [])
         industries = _safe_json(getattr(profile, 'industry_preferences', None), [])
         seniority = getattr(profile, 'seniority_level', None) or 'senior'
+        tiers_down = getattr(profile, 'search_tiers_down', 0) or 0
+        tiers_up = getattr(profile, 'search_tiers_up', 0) or 0
+        deal_breakers = _safe_json(getattr(profile, 'deal_breakers', None), [])
+        strengths = _safe_json(getattr(profile, 'strengths', None), [])
 
         # Also get rule-based negative keywords as a starting point
         rule_based_negatives = _build_negative_keywords(profile)
 
-        prompt = f"""You are a job search optimization expert. Given this candidate profile, generate:
-1. Additional search queries to find relevant jobs
-2. Negative keywords to EXCLUDE irrelevant results from a different professional domain
+        prompt = f"""You are an executive job search strategist. Given this candidate's FULL profile context, generate highly targeted search queries and exclusion keywords.
 
 **Candidate profile:**
-- Target roles: {', '.join(base_roles[:5])}
-- Seniority: {seniority}
-- Key skills: {', '.join(skills[:10]) if isinstance(skills, list) else str(skills)[:200]}
+- Target roles: {', '.join(base_roles[:7])}
+- Current seniority: {seniority}
+- Search tiers down: {tiers_down} (0 = only target level, 1 = one level below OK, etc.)
+- Search tiers up: {tiers_up} (0 = only target level, 1 = one level above OK, etc.)
+- Key skills: {', '.join(skills[:12]) if isinstance(skills, list) else str(skills)[:200]}
 - Industries: {', '.join(industries[:5]) if isinstance(industries, list) else ''}
-- Summary: {profile_summary[:300]}
+- Profile summary: {profile_summary[:400]}
+- Career trajectory: {career_trajectory[:300]}
+- Key strengths: {', '.join(strengths[:4]) if isinstance(strengths, list) else ''}
+- Deal breakers: {', '.join(deal_breakers[:3]) if isinstance(deal_breakers, list) else ''}
+
+**CRITICAL SEARCH RULES:**
+1. This candidate's domain is VERY specific. If they target "Chief Information SECURITY Officer" (CISO), do NOT include "Chief Information Officer" (CIO) — those are DIFFERENT roles. CIO is an IT leadership role; CISO is a cybersecurity role. Only include CIO if their profile explicitly mentions IT operations leadership without security focus.
+2. Queries must be EXACT JOB TITLES, not skills or buzzwords.
+3. Be precise about the domain: cybersecurity ≠ general IT, security engineering ≠ physical security.
+4. Respect the seniority tier preferences. If tiers_down=0, do NOT suggest junior roles.
 
 Return a JSON object with:
 {{
-    "queries": ["5-8 alternative search queries, concise 2-5 words each"],
-    "negative_keywords": ["words/phrases to EXCLUDE - terms from wrong domains that share keywords with target roles. E.g., for IT Security: 'physical security', 'guard', 'loss prevention', 'armed', 'patrol'"]
-}}
-
-For queries: Use alternative JOB TITLES, industry variations, adjacent roles, regional terminology.
-IMPORTANT: Queries must be role/title-focused (e.g., "CISO", "VP Information Security"). Do NOT generate queries that are just skill names or narrow specialty areas (e.g., do NOT return "Risk Management" or "GRC Compliance" as queries — those are skills, not job titles).
-The goal is to find ROLES that match the target positions, not to search by skill keywords.
-For negative_keywords: Think about what WRONG jobs might appear due to keyword overlap. What terms indicate a completely different professional field?"""
+    "queries": ["5-8 alternative EXACT JOB TITLES that match this candidate's specific domain and seniority. Be precise — 'VP Cybersecurity' not 'VP Technology'. Include industry-specific title variations."],
+    "negative_keywords": ["words/phrases to EXCLUDE — wrong-domain titles and terms. Include titles that look similar but are wrong (e.g., 'Chief Information Officer' if candidate is CISO, 'IT Director' if candidate is Security Director). Also include wrong-industry terms."]
+}}"""
 
         result = await ai_generate_json(prompt, max_tokens=600, model_tier="fast")
 
