@@ -52,10 +52,7 @@
             text-align: center;
         }
 
-        .login-logo {
-            height: 64px;
-            width: auto;
-        }
+        .login-logo { height: 64px; width: auto; }
 
         .login-title {
             font-size: 1.5rem;
@@ -80,9 +77,23 @@
         }
 
         .divider {
-            width: 48px;
+            width: 100%;
             height: 1px;
             background: var(--jb-border);
+            position: relative;
+        }
+        .divider-text {
+            text-align: center;
+            margin: -4px 0 0;
+            position: relative;
+        }
+        .divider-text span {
+            font-size: 12px;
+            color: var(--jb-text-3);
+            padding: 0 12px;
+            background: var(--jb-bg-primary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .google-btn {
@@ -100,23 +111,85 @@
             cursor: pointer;
             text-decoration: none;
             transition: all 0.2s ease;
+            width: 100%;
+            max-width: 320px;
+            justify-content: center;
         }
-
         .google-btn:hover {
             background: var(--jb-bg-secondary);
             border-color: var(--jb-bright);
             transform: translateY(-1px);
             box-shadow: 0 4px 20px rgba(74,144,217,.15);
         }
+        .google-btn:active { transform: translateY(0); }
+        .google-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
 
-        .google-btn:active {
-            transform: translateY(0);
+        /* ── Local Auth Form ── */
+        .local-auth-form {
+            width: 100%;
+            max-width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
-
-        .google-btn svg {
-            width: 20px;
-            height: 20px;
-            flex-shrink: 0;
+        .local-auth-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid var(--jb-border);
+            border-radius: 8px;
+            background: var(--jb-bg-secondary);
+            color: var(--jb-text-1);
+            font-family: var(--jb-font);
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .local-auth-input:focus {
+            border-color: var(--jb-bright);
+        }
+        .local-auth-input::placeholder {
+            color: var(--jb-text-3);
+        }
+        .local-auth-btn {
+            width: 100%;
+            padding: 11px 20px;
+            background: var(--jb-bright);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-family: var(--jb-font);
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .local-auth-btn:hover {
+            background: var(--jb-bright-light);
+            transform: translateY(-1px);
+        }
+        .local-auth-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .local-auth-error {
+            color: var(--jb-red);
+            font-size: 0.8rem;
+            text-align: center;
+        }
+        .local-auth-toggle {
+            font-size: 0.8rem;
+            color: var(--jb-text-3);
+            text-align: center;
+        }
+        .local-auth-toggle a {
+            color: var(--jb-bright);
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .local-auth-toggle a:hover {
+            color: var(--jb-bright-light);
+            text-decoration: underline;
         }
 
         .footer-text {
@@ -132,18 +205,14 @@
             pointer-events: none;
         }
         .diamond-accent.top-right {
-            top: 10%;
-            right: 10%;
-            width: 120px;
-            height: 120px;
+            top: 10%; right: 10%;
+            width: 120px; height: 120px;
             transform: rotate(45deg);
             border: 2px solid var(--jb-bright);
         }
         .diamond-accent.bottom-left {
-            bottom: 15%;
-            left: 8%;
-            width: 80px;
-            height: 80px;
+            bottom: 15%; left: 8%;
+            width: 80px; height: 80px;
             transform: rotate(45deg);
             border: 2px solid var(--jb-red);
         }
@@ -164,7 +233,8 @@
 
         <div class="divider"></div>
 
-        <a href="/auth/login" class="google-btn">
+        <!-- Google Sign-In -->
+        <a href="/auth/login" class="google-btn" id="google-btn">
             <svg viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -174,7 +244,155 @@
             Sign in with Google
         </a>
 
-        <p class="footer-text">Secure authentication via Google OAuth 2.0</p>
+        <div class="divider"></div>
+        <p class="divider-text"><span>or sign in with email</span></p>
+
+        <!-- Local Auth Form -->
+        <div class="local-auth-form" id="local-auth-form">
+            <input type="text" id="local-auth-name" class="local-auth-input" placeholder="Full Name" style="display:none" autocomplete="name">
+            <input type="email" id="local-auth-email" class="local-auth-input" placeholder="Email" autocomplete="email" required pattern="[^@\s]+@[^@\s]+\.[^@\s]+">
+            <input type="password" id="local-auth-password" class="local-auth-input" placeholder="Password" autocomplete="current-password" required>
+            <input type="password" id="local-auth-confirm-password" class="local-auth-input" placeholder="Confirm Password" style="display:none" autocomplete="new-password">
+            <p id="password-requirements" class="local-auth-toggle" style="display:none;font-size:0.75rem;color:var(--jb-text-3);text-align:left;margin:0">Password: min 8 chars, 1 uppercase, 1 digit</p>
+            <div id="local-auth-error" class="local-auth-error" style="display:none"></div>
+            <button class="local-auth-btn" id="local-auth-submit" onclick="handleLocalAuth()">Sign In</button>
+            <p class="local-auth-toggle">
+                <span id="local-auth-toggle-text">Don't have an account?</span>
+                <a href="#" id="local-auth-toggle-link" onclick="toggleMode(); return false;">Create one</a>
+            </p>
+        </div>
+
+        <p class="footer-text">By signing in, you agree to our <a href="#" style="color:var(--jb-bright);text-decoration:none">Terms of Service</a> and <a href="#" style="color:var(--jb-bright);text-decoration:none">Privacy Policy</a>.</p>
     </div>
+
+    <script>
+        let _mode = 'login';
+
+        function toggleMode() {
+            _mode = _mode === 'login' ? 'register' : 'login';
+            const nameField = document.getElementById('local-auth-name');
+            const submitBtn = document.getElementById('local-auth-submit');
+            const toggleText = document.getElementById('local-auth-toggle-text');
+            const toggleLink = document.getElementById('local-auth-toggle-link');
+            const errorDiv = document.getElementById('local-auth-error');
+            const passField = document.getElementById('local-auth-password');
+
+            const pwReqs = document.getElementById('password-requirements');
+            const confirmField = document.getElementById('local-auth-confirm-password');
+            const dividerTextEl = document.querySelector('.divider-text span');
+            if (_mode === 'register') {
+                nameField.style.display = '';
+                if (confirmField) confirmField.style.display = '';
+                submitBtn.textContent = 'Create Account';
+                toggleText.textContent = 'Already have an account?';
+                toggleLink.textContent = 'Sign in';
+                passField.autocomplete = 'new-password';
+                if (pwReqs) pwReqs.style.display = '';
+                if (dividerTextEl) dividerTextEl.textContent = 'or create account with email';
+            } else {
+                nameField.style.display = 'none';
+                nameField.value = '';
+                if (confirmField) { confirmField.style.display = 'none'; confirmField.value = ''; }
+                submitBtn.textContent = 'Sign In';
+                toggleText.textContent = "Don't have an account?";
+                toggleLink.textContent = 'Create one';
+                passField.autocomplete = 'current-password';
+                if (pwReqs) pwReqs.style.display = 'none';
+                if (dividerTextEl) dividerTextEl.textContent = 'or sign in with email';
+            }
+            errorDiv.style.display = 'none';
+        }
+
+        async function handleLocalAuth() {
+            const email = document.getElementById('local-auth-email').value.trim();
+            const password = document.getElementById('local-auth-password').value;
+            const name = document.getElementById('local-auth-name').value.trim();
+            const errorDiv = document.getElementById('local-auth-error');
+            const submitBtn = document.getElementById('local-auth-submit');
+
+            if (!email || !password || (_mode === 'register' && !name)) {
+                errorDiv.textContent = _mode === 'register' ? 'Name, email, and password are required' : 'Email and password are required';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            // Email format validation
+            const emailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+            if (!emailPattern.test(email)) {
+                errorDiv.textContent = 'Please enter a valid email address';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            if (_mode === 'register' && !name) {
+                errorDiv.textContent = 'Name is required';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            if (_mode === 'register') {
+                const confirmPassword = document.getElementById('local-auth-confirm-password').value;
+                if (password !== confirmPassword) {
+                    errorDiv.textContent = 'Passwords do not match';
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+                if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+                    errorDiv.textContent = 'Password must be at least 8 characters, with at least one uppercase letter and one digit';
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = _mode === 'register' ? 'Creating…' : 'Signing in…';
+            errorDiv.style.display = 'none';
+
+            try {
+                const endpoint = _mode === 'register' ? '/auth/local/register' : '/auth/local/login';
+                const body = _mode === 'register'
+                    ? { name, email, password }
+                    : { email, password };
+
+                const resp = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.detail || `Error ${resp.status}`);
+                }
+
+                // Success — redirect to app
+                window.location.href = '/';
+            } catch (e) {
+                errorDiv.textContent = e.message;
+                errorDiv.style.display = 'block';
+                submitBtn.disabled = false;
+                submitBtn.textContent = _mode === 'register' ? 'Create Account' : 'Sign In';
+            }
+        }
+
+        // Allow Enter key to submit
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') handleLocalAuth();
+        });
+
+        // Hide Google button if not configured or if accessing from non-localhost
+        // (Google OAuth only works with localhost callback, not private IPs)
+        const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+        fetch('/auth/config')
+            .then(r => r.json())
+            .then(config => {
+                if (!config.google_client_id || !isLocalhost) {
+                    document.getElementById('google-btn').style.display = 'none';
+                    const dividers = document.querySelectorAll('.divider');
+                    if (dividers[0]) dividers[0].style.display = 'none';
+                    // Update divider text since Google isn't an option
+                    const divText = document.querySelector('.divider-text');
+                    if (divText) divText.style.display = 'none';
+                }
+            })
+            .catch(() => {});
+    </script>
 </body>
 </html>

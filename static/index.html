@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260317c">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260318f">
     <script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
@@ -15,18 +15,34 @@
     <div class="login-overlay" id="login-overlay" style="display:none">
         <div class="login-container">
             <img src="/static/logo-dark.svg" alt="Jobbunt" class="login-logo">
-            <p class="login-tagline">Tinder-style job search & auto-apply</p>
+            <p class="login-tagline">AI-powered job search. Better interviews. Smarter applications.</p>
             <div id="google-signin-btn" class="google-signin-wrapper"></div>
-            <p class="login-skip" id="login-skip" style="display:none">
-                <a href="#" onclick="skipLogin();return false;">Continue without signing in</a>
-            </p>
+
+            <!-- Local Auth (works without Google) -->
+            <div class="local-auth-section" id="local-auth-section">
+                <div class="local-auth-divider"><span>or sign in with email</span></div>
+                <div id="local-auth-form">
+                    <input type="text" id="local-auth-name" class="local-auth-input" placeholder="Full Name" style="display:none" autocomplete="name">
+                    <input type="email" id="local-auth-email" class="local-auth-input" placeholder="Email" autocomplete="email">
+                    <input type="password" id="local-auth-password" class="local-auth-input" placeholder="Password" autocomplete="current-password">
+                    <input type="password" id="local-auth-confirm-password" class="local-auth-input" placeholder="Confirm Password" style="display:none" autocomplete="new-password">
+                    <div id="local-auth-error" class="local-auth-error" style="display:none"></div>
+                    <button class="btn btn-primary local-auth-btn" id="local-auth-submit" onclick="handleLocalAuth()">Sign In</button>
+                    <p class="local-auth-toggle">
+                        <span id="local-auth-toggle-text">Don't have an account?</span>
+                        <a href="#" id="local-auth-toggle-link" onclick="toggleLocalAuthMode();return false;">Create one</a>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Dev user skip removed for security -->
         </div>
     </div>
     <div class="app" id="app">
-        <!-- Navigation -->
-        <nav class="nav">
+        <!-- Top Bar (minimal: logo + activity + avatar) -->
+        <nav class="top-bar">
             <div class="nav-brand">
-                <svg width="110" height="24" viewBox="0 0 150 32">
+                <svg width="110" height="24" viewBox="0 0 150 32" onclick="showView('dugout')" style="cursor:pointer">
                     <text x="0" y="24" font-family="'Outfit',sans-serif" font-size="28" font-weight="300" fill="#E0E6ED" letter-spacing="-1.2">j</text>
                     <g transform="translate(6,5)">
                         <path d="M10 0 L18 9.5 L10 19 L2 9.5Z" fill="#1D2D5C" stroke="#4A90D9" stroke-width="0.5"/>
@@ -37,28 +53,6 @@
                     </g>
                     <text x="26" y="24" font-family="'Outfit',sans-serif" font-size="28" font-weight="300" fill="#E0E6ED" letter-spacing="-1.2">bbunt</text>
                 </svg>
-            </div>
-            <div class="nav-links" id="nav-links">
-                <a class="nav-link active" data-view="dugout" onclick="showView('dugout')">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 12h3v8h6v-5h2v5h6v-8h3L12 3z"/></svg>
-                    Dugout
-                </a>
-                <a class="nav-link" data-view="hunt" onclick="showView('hunt')">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
-                    Scouting
-                </a>
-                <a class="nav-link" data-view="pipeline" onclick="showView('pipeline')">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                    Prospects
-                </a>
-                <a class="nav-link" data-view="intel" onclick="showView('intel')">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                    Bullpen
-                </a>
-                <a class="nav-link" data-view="profile" onclick="showView('profile')">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                    Profile
-                </a>
             </div>
             <div class="nav-right">
                 <div class="activity-indicator" id="activity-indicator" style="display:none">
@@ -84,11 +78,35 @@
                         <button class="dropdown-item dropdown-create-new" onclick="createNewProfile()">
                             <span class="dropdown-create-icon">+</span> Create New Profile
                         </button>
-                        <button class="dropdown-item dropdown-signout" id="dropdown-signout" onclick="logout();closeProfileDropdown()" style="display:none">Sign Out</button>
+                        <button class="dropdown-item dropdown-signout" id="dropdown-signout" onclick="logout();closeProfileDropdown()">Sign Out</button>
                     </div>
                 </div>
             </div>
         </nav>
+
+        <!-- Bottom Tab Bar -->
+        <div class="bottom-tabs" id="bottom-tabs">
+            <button class="bottom-tab active" data-view="dugout" onclick="showView('dugout')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 12h3v8h6v-5h2v5h6v-8h3L12 3z"/></svg>
+                <span>Dugout</span>
+            </button>
+            <button class="bottom-tab" data-view="hunt" onclick="showView('hunt')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+                <span>Scouting</span>
+            </button>
+            <button class="bottom-tab" data-view="pipeline" onclick="showView('pipeline')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                <span>Prospects</span>
+            </button>
+            <button class="bottom-tab" data-view="intel" onclick="showView('intel')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                <span>Bullpen</span>
+            </button>
+            <button class="bottom-tab" data-view="profile" onclick="showView('profile')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <span>Profile</span>
+            </button>
+        </div>
 
         <!-- Main Content -->
         <main class="main page">
@@ -136,6 +154,9 @@
                         <p class="dugout-hero-subtitle">AI-powered job search. Better interviews. Smarter applications.</p>
                     </div>
 
+                    <!-- Readiness Score -->
+                    <div class="dugout-readiness" id="dugout-readiness"></div>
+
                     <!-- Season Stats Row -->
                     <div class="dugout-season-stats" id="dugout-season-stats">
                         <div class="season-stat">
@@ -160,33 +181,33 @@
                         </div>
                     </div>
 
-                    <!-- Scouting Report + Reporter Corner Grid -->
+                    <!-- Spring Training + Reporter Corner Grid -->
                     <div class="dugout-grid">
-                        <!-- Scouting Report -->
-                        <div class="dugout-card dugout-scouting-report" id="dugout-scouting-report">
-                            <div class="dugout-card-label">SCOUTING REPORT</div>
-                            <div class="dugout-card-title">Pre-game Checklist</div>
-                            <div class="scouting-report-progress">
-                                <div class="scouting-report-progress-bar" id="scouting-progress-bar" style="width:0%"></div>
+                        <!-- Spring Training Progression -->
+                        <div class="dugout-card dugout-spring-training" id="dugout-spring-training">
+                            <div class="dugout-card-label">SPRING TRAINING</div>
+                            <div class="dugout-card-title" id="spring-training-title">The Climb</div>
+                            <div class="spring-training-progress">
+                                <div class="spring-training-progress-bar" id="spring-training-progress-bar" style="width:0%"></div>
                             </div>
-                            <div class="scouting-report-pct" id="scouting-progress-pct">0% complete</div>
-                            <div class="scouting-checklist" id="scouting-checklist">
+                            <div class="spring-training-pct" id="spring-training-pct">Rookie Ball</div>
+                            <div class="spring-training-levels" id="spring-training-levels">
                                 <!-- Populated by JS -->
                             </div>
                         </div>
 
                         <!-- Reporter Corner -->
                         <div class="dugout-card dugout-reporter-corner" id="dugout-reporter-corner">
-                            <div class="dugout-card-label">REPORTER CORNER</div>
+                            <div class="dugout-card-label">REPORTER CORNER <span class="reporter-triple-a-badge">🥇 SPRING TRAINING</span></div>
                             <div class="dugout-card-title">Pre-game Interview</div>
+                            <div class="reporter-triple-a-hint" id="reporter-triple-a-hint">Answer these to advance through the ranks</div>
                             <div class="reporter-question" id="reporter-question"></div>
-                            <textarea class="reporter-textarea" id="reporter-textarea" placeholder="Your answer..." rows="4"></textarea>
+                            <textarea class="reporter-textarea" id="reporter-textarea" placeholder="Your answer..." rows="3" style="display:none"></textarea>
                             <div class="reporter-actions">
-                                <button class="reporter-save-btn" id="reporter-save-btn" onclick="saveReporterAnswer()">
+                                <button class="reporter-save-btn" id="reporter-save-btn" onclick="saveReporterAnswer()" style="display:none">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                                     Save Answer
                                 </button>
-                                <span class="reporter-saved-msg" id="reporter-saved-msg"></span>
                             </div>
                         </div>
                     </div>
@@ -208,32 +229,7 @@
                         </div>
                     </div>
 
-                    <!-- Readiness Score -->
-                    <div class="dugout-readiness" id="dugout-readiness"></div>
-
-                    <!-- Quick Actions (restyled) -->
-                    <div class="dugout-actions">
-                        <button class="dugout-action-card" onclick="showView('hunt'); searchJobs()">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
-                            <div class="dugout-action-label">Scout Jobs</div>
-                            <div class="dugout-action-hint">Search &amp; discover</div>
-                        </button>
-                        <button class="dugout-action-card" onclick="showView('hunt')">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a4 4 0 018 0v2"/></svg>
-                            <div class="dugout-action-label">Browse Jobs</div>
-                            <div class="dugout-action-hint">Review your feed</div>
-                        </button>
-                        <button class="dugout-action-card" onclick="showView('pipeline')">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                            <div class="dugout-action-label">Prospects</div>
-                            <div class="dugout-action-hint">Track your pipeline</div>
-                        </button>
-                        <button class="dugout-action-card" onclick="showView('intel')">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                            <div class="dugout-action-label">Bullpen</div>
-                            <div class="dugout-action-hint">AI tools &amp; analysis</div>
-                        </button>
-                    </div>
+                    <!-- Quick actions removed — now in bottom tab bar -->
 
                     <!-- Activity Charts -->
                     <div class="dugout-chart-section" id="dugout-chart-section" style="display:none">
@@ -270,7 +266,7 @@
             <div class="view" id="view-hunt" data-view="hunt">
                 <div class="browse-container">
                     <!-- Browse toolbar -->
-                    <div class="browse-toolbar" id="browse-toolbar">
+                    <div class="browse-toolbar" id="browse-toolbar" style="display:none">
                         <div class="browse-toolbar-left">
                             <button class="btn btn-primary btn-sm btn-search-trigger" onclick="searchJobs()" id="btn-search-more">
                                 🔍 Search Jobs
@@ -673,7 +669,7 @@
 
                     <!-- ═══ STEP 1: Resume Upload (always visible, primary CTA) ═══ -->
                     <div class="profile-section" id="resume-upload-section">
-                        <div class="profile-section-header">Step 1: Drop Your Resume</div>
+                        <div class="profile-section-header">Drop Your Resume</div>
                         <p style="color:var(--text-dim);font-size:13px;margin-bottom:12px">Upload your resume and we'll auto-fill your profile. This is the fastest way to get started.</p>
                         <div class="form-group">
                             <div id="resume-drop-zone" class="resume-drop-zone" onclick="document.getElementById('f-resume-paste').click()">
@@ -713,7 +709,7 @@
 
                         <!-- ── Section: The Basics ── -->
                         <div class="profile-section">
-                            <div class="profile-section-header">Step 2: The Basics</div>
+                            <div class="profile-section-header">The Basics</div>
                             <p style="color:var(--text-dim);font-size:12px;margin-bottom:10px">Confirm or fill in your details — the more complete, the better your matches.</p>
                             <div class="form-row">
                                 <div class="form-group">
@@ -739,7 +735,7 @@
 
                         <!-- ── Section: What Position Are You Playing? ── -->
                         <div class="profile-section">
-                            <div class="profile-section-header">Step 3: What Position Are You Playing?</div>
+                            <div class="profile-section-header">What Position Are You Playing?</div>
                             <p style="color:var(--text-dim);font-size:12px;margin-bottom:10px">Tell us what roles you're targeting and we'll scout the right opportunities.</p>
 
                             <div class="form-group" style="position:relative">
@@ -798,7 +794,7 @@
 
                             <div class="form-row">
                                 <div class="form-group">
-                                    <label>Tiers Down</label>
+                                    <label title="Also consider roles below your target seniority level">Tiers Down <span style="cursor:help;color:var(--text-dim)" title="e.g., if you target Senior roles, '1 tier down' also searches Mid-level roles">&#9432;</span></label>
                                     <select id="f-tiers-down">
                                         <option value="0">None</option>
                                         <option value="1">1 tier down</option>
@@ -806,7 +802,7 @@
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label>Tiers Up</label>
+                                    <label title="Also consider roles above your target seniority level">Tiers Up <span style="cursor:help;color:var(--text-dim)" title="e.g., if you target Senior roles, '1 tier up' also searches Lead/Principal roles">&#9432;</span></label>
                                     <select id="f-tiers-up">
                                         <option value="0">None</option>
                                         <option value="1">1 tier up</option>
@@ -820,9 +816,10 @@
                         <div class="profile-section">
                             <div class="profile-section-header">Game Day Gear</div>
                             <div class="form-group">
-                                <label>Update Resume (PDF, DOCX, or TXT)</label>
-                                <input type="file" id="f-resume" accept=".pdf,.docx,.doc,.txt" style="padding:6px">
-                                <p style="color:var(--text-dim);font-size:11px;margin-top:4px">Already uploaded above? This lets you swap it out later.</p>
+                                <label>Resume</label>
+                                <p style="color:var(--text-dim);font-size:12px;margin-top:2px">
+                                    <a href="#" onclick="event.preventDefault();document.getElementById('resume-upload-section').scrollIntoView({behavior:'smooth'});document.getElementById('resume-drop-zone').style.borderColor='var(--jb-bright)';setTimeout(()=>document.getElementById('resume-drop-zone').style.borderColor='',1500)" style="color:var(--accent,#4A90D9);text-decoration:none">Upload or update your resume</a> in the section above.
+                                </p>
                             </div>
                             <div class="form-group">
                                 <label>Cover Letter Style Notes</label>
@@ -853,13 +850,6 @@
                             <button type="submit" class="btn btn-primary" id="btn-save-profile">Save Profile</button>
                         </div>
                     </form>
-
-                    <!-- Step 4: Tryout Questions -->
-                    <div class="interview-section" id="interview-section">
-                        <div class="profile-section-header">Step 4: The Tryout</div>
-                        <p style="color:var(--text-dim); font-size:12px; margin-bottom:10px">Answer a few questions so our AI can find you better matches and write stronger applications. The more you share, the sharper your results.</p>
-                        <div id="interview-container"></div>
-                    </div>
 
                     <!-- Resume Improver Section -->
                     <div class="interview-section" id="resume-improver-section">
@@ -948,8 +938,43 @@
                             <span class="provider-badge" id="provider-badge">Checking...</span>
                         </div>
                         <p style="font-size:12px; color:var(--text-dim); margin-top:8px">
-                            Set <code>ANTHROPIC_API_KEY</code> in .env for Claude (preferred), or <code>GEMINI_API_KEY</code> for Gemini fallback.
+                            AI features are powered by your configured provider. Contact your administrator to change providers.
                         </p>
+                    </div>
+
+                    <!-- Admin Tools Toggle -->
+                    <div class="settings-section">
+                        <div style="display:flex;align-items:center;justify-content:space-between">
+                            <div>
+                                <h3 style="margin:0">Admin Tools</h3>
+                                <p style="font-size:12px;color:var(--text-dim);margin-top:4px">Model configuration and prompt editing for power users</p>
+                            </div>
+                            <label class="settings-toggle">
+                                <input type="checkbox" id="admin-tools-toggle" onchange="toggleAdminTools(this.checked)">
+                                <span class="settings-toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- AI Model Configuration (admin-gated) -->
+                    <div class="settings-section admin-tool" style="display:none">
+                        <h3>AI Model Configuration</h3>
+                        <p>Configure which AI models are used for each feature category.</p>
+                        <div id="model-config-container">
+                            <div style="color:var(--text-dim);font-size:13px;padding:12px 0">Loading model configuration...</div>
+                        </div>
+                    </div>
+
+                    <!-- Prompt Lab (admin-gated) -->
+                    <div class="settings-section admin-tool" style="display:none;border-color: var(--accent)">
+                        <h3 style="display:flex;align-items:center;gap:8px">
+                            Prompt Lab
+                            <span style="font-size:10px;padding:2px 8px;background:var(--accent);color:#000;border-radius:10px;font-weight:600;letter-spacing:0.5px">ADMIN</span>
+                        </h3>
+                        <p>View, edit, and enhance all AI prompts used across the platform. Changes are stored in memory and reset on server restart.</p>
+                        <div id="prompt-lab-container">
+                            <div style="color:var(--text-dim);font-size:13px;padding:12px 0">Loading prompts...</div>
+                        </div>
                     </div>
 
                     <!-- Application Testing -->
@@ -1074,7 +1099,7 @@
                     <div class="settings-section">
                         <h3>About</h3>
                         <div style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text-dim)">
-                            <div><strong style="color:var(--text-bright)">Jobbunt</strong> &mdash; Tinder-style job search &amp; auto-apply</div>
+                            <div><strong style="color:var(--text-bright)">Jobbunt</strong> &mdash; AI-powered job search &amp; smart applications</div>
                             <div>Version <code>2026.03</code></div>
                             <div>
                                 <a href="#" onclick="event.preventDefault();showView('profile');switchProfileTab('profile')" style="color:var(--accent)">Developer Kit</a>
@@ -1103,6 +1128,6 @@
         <div class="toast-container" id="toast-container"></div>
     </div>
 
-    <script src="/static/js/app.js?v=20260317b"></script>
+    <script src="/static/js/app.js?v=20260318m"></script>
 </body>
 </html>

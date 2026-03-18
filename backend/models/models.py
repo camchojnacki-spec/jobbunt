@@ -8,10 +8,12 @@ from backend.database import Base
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    google_id = Column(String(100), unique=True, nullable=False, index=True)
+    google_id = Column(String(100), unique=True, nullable=True, index=True)
     email = Column(String(200), nullable=False)
     name = Column(String(200))
     picture_url = Column(String(500))
+    password_hash = Column(String(200), nullable=True)  # For local auth (bcrypt)
+    auth_provider = Column(String(20), default="google")  # "google" or "local"
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     last_login = Column(DateTime, default=datetime.datetime.utcnow)
     profiles = relationship("Profile", back_populates="user")
@@ -51,6 +53,16 @@ class Profile(Base):
     growth_areas = Column(Text)  # JSON list of areas candidate wants to develop
     ideal_culture = Column(Text)  # description of ideal work culture
     seniority_level = Column(String(100))  # entry, mid, senior, director, vp, c-suite
+    availability = Column(String(100))  # how soon looking to start
+    employment_type = Column(String(100))  # permanent, contract, consulting
+    commute_tolerance = Column(String(100))  # under 30 min, 30-60, over 60, remote only
+    relocation = Column(String(100))  # yes/no/within country/for right role
+    company_size = Column(String(200))  # preferred company sizes (comma-separated)
+    industry_preference = Column(Text)  # preferred industries (comma-separated)
+    top_priority = Column(Text)  # what matters most in next role (comma-separated)
+    security_clearance = Column(String(100))  # yes/no
+    travel_willingness = Column(String(100))  # none, up to 10%, 25%, 50%, extensive
+    additional_notes = Column(Text)  # free-text notes for recruiters
     search_tiers_down = Column(Integer, default=0)  # how many seniority tiers below to include in search
     search_tiers_up = Column(Integer, default=0)  # how many seniority tiers above to include in search
     profile_analyzed = Column(Boolean, default=False)  # whether deep analysis has been run

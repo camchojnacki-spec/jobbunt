@@ -1744,55 +1744,13 @@ def _save_source_config(config: dict):
 
 
 async def search_serpapi_indeed(query: str, location: str, limit: int = 25) -> list[dict]:
-    """Search via SerpAPI Indeed engine (requires SERPAPI_KEY).
+    """Search for Indeed results via SerpAPI Google Jobs engine.
 
-    Uses SerpAPI's Indeed-specific engine for structured results from Indeed.
+    NOTE: SerpAPI discontinued the dedicated 'indeed' engine.
+    This now delegates to Google Jobs which aggregates Indeed listings.
     """
-    api_key = os.environ.get("SERPAPI_KEY") or _get_source_config().get("serpapi", {}).get("api_key", "")
-    if not api_key:
-        return []
-
-    jobs = []
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(
-                "https://serpapi.com/search.json",
-                params={
-                    "engine": "indeed",
-                    "q": query,
-                    "l": location,
-                    "api_key": api_key,
-                },
-            )
-            if resp.status_code != 200:
-                logger.warning(f"SerpAPI Indeed returned status {resp.status_code}")
-                return jobs
-
-            data = resp.json()
-            for item in data.get("jobs_results", [])[:limit]:
-                salary = ""
-                detected = item.get("detected_extensions", {})
-                if detected.get("salary"):
-                    salary = detected["salary"]
-
-                jobs.append({
-                    "title": item.get("title", ""),
-                    "company": item.get("company_name", "Unknown"),
-                    "location": item.get("location", location),
-                    "description": (item.get("description", "") or "")[:2000],
-                    "url": item.get("link", item.get("job_id", "")),
-                    "source": "indeed",
-                    "salary_text": salary,
-                    "job_type": detected.get("schedule_type", ""),
-                })
-
-            if jobs:
-                logger.info(f"SerpAPI Indeed: found {len(jobs)} results for '{query}' in '{location}'")
-
-    except Exception as e:
-        logger.error(f"SerpAPI Indeed search failed: {e}")
-
-    return jobs
+    logger.info("SerpAPI Indeed engine discontinued — delegating to Google Jobs (aggregates Indeed)")
+    return await search_serpapi_google_jobs(query, location, limit)
 
 
 # ── Source Registry ───────────────────────────────────────────────────────
@@ -1984,34 +1942,43 @@ async def _ai_expand_queries(profile: Profile, base_roles: list[str]) -> tuple[l
         from backend.services.ai import ai_generate_json
 
         profile_summary = getattr(profile, 'profile_summary', '') or ''
+        career_trajectory = getattr(profile, 'career_trajectory', '') or ''
         skills = _safe_json(profile.skills, [])
         industries = _safe_json(getattr(profile, 'industry_preferences', None), [])
         seniority = getattr(profile, 'seniority_level', None) or 'senior'
+        tiers_down = getattr(profile, 'search_tiers_down', 0) or 0
+        tiers_up = getattr(profile, 'search_tiers_up', 0) or 0
+        deal_breakers = _safe_json(getattr(profile, 'deal_breakers', None), [])
+        strengths = _safe_json(getattr(profile, 'strengths', None), [])
 
         # Also get rule-based negative keywords as a starting point
         rule_based_negatives = _build_negative_keywords(profile)
 
-        prompt = f"""You are a job search optimization expert. Given this candidate profile, generate:
-1. Additional search queries to find relevant jobs
-2. Negative keywords to EXCLUDE irrelevant results from a different professional domain
+        prompt = f"""You are an executive job search strategist. Given this candidate's FULL profile context, generate highly targeted search queries and exclusion keywords.
 
 **Candidate profile:**
-- Target roles: {', '.join(base_roles[:5])}
-- Seniority: {seniority}
-- Key skills: {', '.join(skills[:10]) if isinstance(skills, list) else str(skills)[:200]}
+- Target roles: {', '.join(base_roles[:7])}
+- Current seniority: {seniority}
+- Search tiers down: {tiers_down} (0 = only target level, 1 = one level below OK, etc.)
+- Search tiers up: {tiers_up} (0 = only target level, 1 = one level above OK, etc.)
+- Key skills: {', '.join(skills[:12]) if isinstance(skills, list) else str(skills)[:200]}
 - Industries: {', '.join(industries[:5]) if isinstance(industries, list) else ''}
-- Summary: {profile_summary[:300]}
+- Profile summary: {profile_summary[:400]}
+- Career trajectory: {career_trajectory[:300]}
+- Key strengths: {', '.join(strengths[:4]) if isinstance(strengths, list) else ''}
+- Deal breakers: {', '.join(deal_breakers[:3]) if isinstance(deal_breakers, list) else ''}
+
+**CRITICAL SEARCH RULES:**
+1. This candidate's domain is VERY specific. If they target "Chief Information SECURITY Officer" (CISO), do NOT include "Chief Information Officer" (CIO) — those are DIFFERENT roles. CIO is an IT leadership role; CISO is a cybersecurity role. Only include CIO if their profile explicitly mentions IT operations leadership without security focus.
+2. Queries must be EXACT JOB TITLES, not skills or buzzwords.
+3. Be precise about the domain: cybersecurity ≠ general IT, security engineering ≠ physical security.
+4. Respect the seniority tier preferences. If tiers_down=0, do NOT suggest junior roles.
 
 Return a JSON object with:
 {{
-    "queries": ["5-8 alternative search queries, concise 2-5 words each"],
-    "negative_keywords": ["words/phrases to EXCLUDE - terms from wrong domains that share keywords with target roles. E.g., for IT Security: 'physical security', 'guard', 'loss prevention', 'armed', 'patrol'"]
-}}
-
-For queries: Use alternative JOB TITLES, industry variations, adjacent roles, regional terminology.
-IMPORTANT: Queries must be role/title-focused (e.g., "CISO", "VP Information Security"). Do NOT generate queries that are just skill names or narrow specialty areas (e.g., do NOT return "Risk Management" or "GRC Compliance" as queries — those are skills, not job titles).
-The goal is to find ROLES that match the target positions, not to search by skill keywords.
-For negative_keywords: Think about what WRONG jobs might appear due to keyword overlap. What terms indicate a completely different professional field?"""
+    "queries": ["5-8 alternative EXACT JOB TITLES that match this candidate's specific domain and seniority. Be precise — 'VP Cybersecurity' not 'VP Technology'. Include industry-specific title variations."],
+    "negative_keywords": ["words/phrases to EXCLUDE — wrong-domain titles and terms. Include titles that look similar but are wrong (e.g., 'Chief Information Officer' if candidate is CISO, 'IT Director' if candidate is Security Director). Also include wrong-industry terms."]
+}}"""
 
         result = await ai_generate_json(prompt, max_tokens=600, model_tier="fast")
 
@@ -2284,6 +2251,23 @@ async def search_all_sources(profile: Profile, sources: list[str] | None = None,
     # Log per-source summary
     summary_parts = [f"{src}={count}" for src, count in sorted(source_result_counts.items(), key=lambda x: -x[1])]
     logger.info(f"Multi-source search complete: {len(all_jobs)} total raw results. Per-source: {', '.join(summary_parts) or 'none'}")
+
+    # ── Browser fallback: if regular scraping returned few/no results, use Playwright ──
+    if len(all_jobs) < 5:
+        logger.info(f"Only {len(all_jobs)} results from regular scraping — trying Playwright browser fallback")
+        try:
+            from backend.services.browser_orchestrator import scrape_jobs_browser
+            # Use first role + first location for browser search
+            browser_query = target_roles[0] if target_roles else ""
+            browser_loc = target_locations[0] if target_locations else ""
+            browser_sites = ["indeed_ca", "linkedin", "glassdoor"] if _detect_region(target_locations) == "canada" else ["indeed", "linkedin", "glassdoor"]
+            browser_jobs = await scrape_jobs_browser(browser_query, browser_loc, browser_sites, max_per_site=15)
+            if browser_jobs:
+                all_jobs.extend(browser_jobs)
+                logger.info(f"Browser fallback added {len(browser_jobs)} jobs")
+                source_result_counts["browser"] = len(browser_jobs)
+        except Exception as e:
+            logger.warning(f"Browser fallback failed: {e}")
 
     # AI relevance gate: filter out jobs from wrong domains
     pre_filter_count = len(all_jobs)

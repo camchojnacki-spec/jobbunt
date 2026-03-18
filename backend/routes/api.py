@@ -85,9 +85,57 @@ class ProfileCreate(BaseModel):
     search_tiers_down: Optional[int] = 0
     search_tiers_up: Optional[int] = 0
     pin: Optional[str] = None
+    seniority_level: Optional[str] = None
+    availability: Optional[str] = None
+    employment_type: Optional[str] = None
+    commute_tolerance: Optional[str] = None
+    relocation: Optional[str] = None
+    company_size: Optional[str] = None
+    industry_preference: Optional[str] = None
+    top_priority: Optional[str] = None
+    security_clearance: Optional[str] = None
+    travel_willingness: Optional[str] = None
+    additional_notes: Optional[str] = None
+    deal_breakers: Optional[str] = None
+    ideal_culture: Optional[str] = None
+    values: Optional[str] = None
+    strengths: Optional[str] = None
+    growth_areas: Optional[str] = None
 
-class ProfileUpdate(ProfileCreate):
-    pass
+class ProfileUpdate(BaseModel):
+    """All fields optional for partial updates (e.g. Reporter Corner saving one field at a time)."""
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    target_roles: Optional[list[str]] = None
+    target_locations: Optional[list[str]] = None
+    min_salary: Optional[int] = None
+    max_salary: Optional[int] = None
+    remote_preference: Optional[str] = None
+    experience_years: Optional[int] = None
+    skills: Optional[list[str]] = None
+    cover_letter_template: Optional[str] = None
+    raw_profile_doc: Optional[str] = None
+    search_tiers_down: Optional[int] = None
+    search_tiers_up: Optional[int] = None
+    pin: Optional[str] = None
+    seniority_level: Optional[str] = None
+    availability: Optional[str] = None
+    employment_type: Optional[str] = None
+    commute_tolerance: Optional[str] = None
+    relocation: Optional[str] = None
+    company_size: Optional[str] = None
+    industry_preference: Optional[str] = None
+    top_priority: Optional[str] = None
+    security_clearance: Optional[str] = None
+    travel_willingness: Optional[str] = None
+    additional_notes: Optional[str] = None
+    deal_breakers: Optional[str] = None
+    ideal_culture: Optional[str] = None
+    values: Optional[str] = None
+    strengths: Optional[str] = None
+    growth_areas: Optional[str] = None
 
 class ProfilePasteInput(BaseModel):
     text: str
@@ -201,26 +249,25 @@ def get_profile(profile_id: int, db: Session = Depends(get_db), user: User = Dep
 @router.put("/profiles/{profile_id}")
 def update_profile(profile_id: int, data: ProfileUpdate, db: Session = Depends(get_db), user: User = Depends(get_optional_user)):
     profile = _get_profile_for_user(profile_id, user, db)
-    profile.name = data.name
-    profile.email = data.email
-    profile.phone = data.phone
-    profile.location = data.location
-    profile.target_roles = json.dumps(data.target_roles)
-    profile.target_locations = json.dumps(data.target_locations)
-    profile.min_salary = data.min_salary
-    profile.max_salary = data.max_salary
-    profile.remote_preference = data.remote_preference
-    profile.experience_years = data.experience_years
-    profile.skills = json.dumps(data.skills)
-    profile.cover_letter_template = data.cover_letter_template
-    if data.raw_profile_doc is not None:
-        profile.raw_profile_doc = data.raw_profile_doc
-    if data.search_tiers_down is not None:
-        profile.search_tiers_down = data.search_tiers_down
-    if data.search_tiers_up is not None:
-        profile.search_tiers_up = data.search_tiers_up
-    if data.pin is not None:
-        profile.pin = data.pin or None
+    # Only update fields that were explicitly provided (partial update support)
+    json_fields = {'target_roles', 'target_locations', 'skills'}
+    simple_fields = [
+        'name', 'email', 'phone', 'location', 'min_salary', 'max_salary',
+        'remote_preference', 'experience_years', 'cover_letter_template',
+        'raw_profile_doc', 'search_tiers_down', 'search_tiers_up', 'pin',
+        'seniority_level', 'availability', 'employment_type', 'commute_tolerance',
+        'relocation', 'company_size', 'industry_preference', 'top_priority',
+        'security_clearance', 'travel_willingness', 'additional_notes',
+        'deal_breakers', 'ideal_culture', 'values', 'strengths', 'growth_areas',
+    ]
+    for f in simple_fields:
+        val = getattr(data, f, None)
+        if val is not None:
+            setattr(profile, f, val)
+    for f in json_fields:
+        val = getattr(data, f, None)
+        if val is not None:
+            setattr(profile, f, json.dumps(val))
     db.commit()
     return _profile_dict(profile)
 
@@ -238,7 +285,10 @@ async def parse_profile_text(data: ProfilePasteInput):
 CRITICAL RULES FOR EACH FIELD:
 - **target_roles**: Extract EXACT job titles the candidate is targeting. These must be real, searchable job titles
   (e.g. "Director, Information Security" NOT "Director-level security roles"). Include title variations
-  (e.g. both "CISO" and "Chief Information Security Officer"). Max 10 titles.
+  (e.g. both "CISO" and "Chief Information Security Officer"). Also generate GRANULAR individual titles
+  from compound roles — e.g. "Director, IT Operations & Cybersecurity" should produce BOTH
+  "Director, IT Operations" AND "Director, Cybersecurity" as separate entries. Include shorter
+  variations too like "Cybersecurity Director", "IT Security Director". Max 12 titles.
 - **target_locations**: Extract specific geographic locations (city, province/state, country).
   Include variations like "Toronto, ON" and "GTA". If remote is mentioned, include "Remote" as a location too.
 - **skills**: Extract MARKET-STANDARD skill terms that would appear in job postings.
@@ -2203,6 +2253,11 @@ async def apply_advisor_suggestion(profile_id: int, data: dict, db: Session = De
     allowed_fields = {
         "seniority_level", "min_salary", "max_salary",
         "search_tiers_down", "search_tiers_up", "remote_preference",
+        "availability", "employment_type", "commute_tolerance",
+        "relocation", "company_size", "industry_preference",
+        "top_priority", "security_clearance", "travel_willingness",
+        "additional_notes", "deal_breakers", "ideal_culture",
+        "values", "strengths", "growth_areas",
     }
     # Text fields the AI advisor can update (profile narrative fields)
     text_fields = {
@@ -3044,6 +3099,17 @@ def _profile_dict(p: Profile) -> dict:
         "search_tiers_down": p.search_tiers_down or 0,
         "search_tiers_up": p.search_tiers_up or 0,
         "career_history": _safe_json(p.career_history, []),
+        # Reporter Corner fields
+        "availability": p.availability,
+        "employment_type": p.employment_type,
+        "commute_tolerance": p.commute_tolerance,
+        "relocation": p.relocation,
+        "company_size": p.company_size,
+        "industry_preference": p.industry_preference,
+        "top_priority": p.top_priority,
+        "security_clearance": p.security_clearance,
+        "travel_willingness": p.travel_willingness,
+        "additional_notes": p.additional_notes,
     }
 
 
@@ -3260,6 +3326,129 @@ RULES:
         return {"error": "Unexpected AI response format"}
     finally:
         db.close()
+
+
+# ── Prompt Lab & Model Configuration ─────────────────────────────────────
+
+@router.get("/config/prompts")
+def get_all_prompts_api():
+    """Return all AI prompts grouped by category."""
+    from backend.services.prompt_registry import get_all_prompts
+    return get_all_prompts()
+
+
+@router.get("/config/prompts/{key}")
+def get_prompt_api(key: str):
+    """Return a single prompt's metadata and template."""
+    from backend.services.prompt_registry import get_prompt
+    prompt = get_prompt(key)
+    if not prompt:
+        raise HTTPException(404, f"Prompt '{key}' not found")
+    return prompt
+
+
+@router.put("/config/prompts/{key}")
+def update_prompt_api(key: str, data: dict):
+    """Update a prompt template at runtime."""
+    from backend.services.prompt_registry import update_prompt
+    template = data.get("prompt_template", "")
+    if not template:
+        raise HTTPException(400, "prompt_template is required")
+    if update_prompt(key, template):
+        return {"status": "updated", "key": key}
+    raise HTTPException(404, f"Prompt '{key}' not found")
+
+
+@router.post("/config/prompts/{key}/reset")
+def reset_prompt_api(key: str):
+    """Reset a prompt to its default template."""
+    from backend.services.prompt_registry import reset_prompt, get_default_template
+    was_modified = reset_prompt(key)
+    default = get_default_template(key)
+    if default is None:
+        raise HTTPException(404, f"Prompt '{key}' not found")
+    return {"status": "reset", "was_modified": was_modified, "prompt_template": default}
+
+
+@router.post("/config/prompts/{key}/enhance")
+async def enhance_prompt_api(key: str):
+    """Use AI to suggest improvements to a prompt template."""
+    from backend.services.prompt_registry import get_prompt
+    prompt_data = get_prompt(key)
+    if not prompt_data:
+        raise HTTPException(404, f"Prompt '{key}' not found")
+
+    current_template = prompt_data["prompt_template"]
+    name = prompt_data["name"]
+    description = prompt_data["description"]
+
+    enhance_prompt = f"""You are an expert prompt engineer. Analyze this AI prompt template and suggest improvements.
+
+PROMPT NAME: {name}
+DESCRIPTION: {description}
+MODEL TIER: {prompt_data['model_tier']}
+
+CURRENT PROMPT TEMPLATE:
+---
+{current_template}
+---
+
+Analyze the prompt and provide:
+1. A quality score (0-100) for the current prompt
+2. Specific suggestions for improvement
+3. An improved version of the prompt
+
+Return JSON:
+{{
+    "quality_score": <0-100>,
+    "analysis": "2-3 sentences analyzing the current prompt's strengths and weaknesses",
+    "suggestions": ["specific suggestion 1", "suggestion 2", "suggestion 3"],
+    "improved_template": "The full improved prompt template (keep the same variable placeholders like {{variable_name}})"
+}}
+
+Focus on: clarity, specificity, output format consistency, guardrails, and scoring calibration."""
+
+    result = await ai_generate_json(enhance_prompt, max_tokens=2000, model_tier="balanced")
+    if not result:
+        raise HTTPException(500, "AI enhancement failed — try again")
+    # Ensure required fields exist with sensible defaults
+    result.setdefault("quality_score", 50)
+    result.setdefault("analysis", "Analysis unavailable.")
+    result.setdefault("suggestions", [])
+    result.setdefault("improved_template", current_template)
+    # Coerce quality_score to int in case AI returned a string
+    try:
+        result["quality_score"] = int(result["quality_score"])
+    except (ValueError, TypeError):
+        result["quality_score"] = 50
+    return result
+
+
+@router.get("/config/models")
+def get_models_api():
+    """Return available models and current configuration."""
+    from backend.services.prompt_registry import get_model_config
+    return get_model_config()
+
+
+@router.put("/config/models/override")
+def set_model_override_api(data: dict):
+    """Set a per-feature model tier override."""
+    from backend.services.prompt_registry import set_model_override, clear_model_override
+    feature_key = data.get("feature_key", "")
+    model_tier = data.get("model_tier", "")
+
+    if not feature_key:
+        raise HTTPException(400, "feature_key is required")
+
+    # Allow clearing override by passing empty/null tier
+    if not model_tier:
+        clear_model_override(feature_key)
+        return {"status": "cleared", "feature_key": feature_key}
+
+    if set_model_override(feature_key, model_tier):
+        return {"status": "updated", "feature_key": feature_key, "model_tier": model_tier}
+    raise HTTPException(400, f"Invalid feature_key or model_tier")
 
 
 # ── Email Integration ─────────────────────────────────────────────────────
