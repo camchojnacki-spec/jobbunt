@@ -608,7 +608,7 @@ function renderBaseballCardFront() {
     const pictureUrl = state.authUser?.picture_url || '';
 
     const avatarHTML = pictureUrl
-        ? `<img src="${esc(pictureUrl)}" alt="${esc(name)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />`
+        ? `<img src="${esc(pictureUrl)}" alt="${esc(name)}" referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />`
         : `${(firstName[0] || '') + (lastName[0] || '')}`;
 
     el.innerHTML = `
@@ -4438,7 +4438,10 @@ function updateNavAvatar() {
                 img.id = 'avatar-img';
                 img.src = state.authUser.picture_url;
                 img.alt = state.authUser.name || '';
+                img.referrerPolicy = 'no-referrer';
+                img.crossOrigin = 'anonymous';
                 img.style.cssText = 'width:100%;height:100%;border-radius:50%;object-fit:cover;';
+                img.onerror = () => { img.remove(); if (el) { el.style.display = ''; el.textContent = getProfileInitials(state.profile); } };
                 container.appendChild(img);
             }
         } else {
@@ -4895,9 +4898,21 @@ const REPORTER_QUESTIONS = [
 let _reporterQuestionIndex = 0;
 
 function loadReporterCorner() {
-    const q = REPORTER_QUESTIONS[_reporterQuestionIndex % REPORTER_QUESTIONS.length];
     const qEl = document.getElementById('reporter-question');
     const taEl = document.getElementById('reporter-textarea');
+    const saveBtn = document.getElementById('reporter-save-btn');
+
+    // Gate behind profile completion
+    if (!state.profileId || !state.profile) {
+        if (qEl) qEl.innerHTML = `<div style="font-size:13px;color:var(--jb-text-dim);padding:8px 0">Complete your profile to unlock the pre-game interview.</div>`;
+        if (taEl) taEl.style.display = 'none';
+        if (saveBtn) saveBtn.style.display = 'none';
+        return;
+    }
+    if (taEl) taEl.style.display = '';
+    if (saveBtn) saveBtn.style.display = '';
+
+    const q = REPORTER_QUESTIONS[_reporterQuestionIndex % REPORTER_QUESTIONS.length];
     if (qEl) {
         qEl.innerHTML = `
             <div class="reporter-q-text" style="font-size:14px;font-weight:500;margin-bottom:8px">${esc(q.q)}</div>
@@ -4960,7 +4975,18 @@ async function loadDugoutSeasonStats() {
 }
 
 async function loadScoutingReport() {
-    if (!state.profileId || !state.profile) return;
+    const el = document.getElementById('scouting-checklist');
+    if (!state.profileId || !state.profile) {
+        // Show a get-started state when no profile exists
+        if (el) el.innerHTML = `
+            <div style="padding:12px 0;text-align:center">
+                <div style="font-size:13px;color:var(--jb-text-dim);margin-bottom:12px">Create a profile to start your pre-game checklist.</div>
+                <button class="btn btn-primary btn-sm" onclick="showView('profile')">Get Started</button>
+            </div>`;
+        const pctEl = document.getElementById('scouting-progress-pct');
+        if (pctEl) pctEl.textContent = '0% complete';
+        return;
+    }
     const p = state.profile;
     const checks = [
         { label: 'Profile Created', done: true },
