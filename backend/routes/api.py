@@ -47,6 +47,20 @@ _rescore_progress = {}  # {profile_id: {"current": n, "total": n, "status": "run
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# ── Cloud Storage (production) ────────────────────────────────────────────
+GCS_BUCKET = os.environ.get("GCS_BUCKET")
+_gcs_client = None
+
+def _get_gcs_bucket():
+    """Lazy-load GCS bucket for production file storage."""
+    global _gcs_client
+    if not GCS_BUCKET:
+        return None
+    if _gcs_client is None:
+        from google.cloud import storage
+        _gcs_client = storage.Client()
+    return _gcs_client.bucket(GCS_BUCKET)
+
 
 async def _safe_enrich(db: Session, job: Job, profile: Profile):
     """Wrapper for enrich_job that catches exceptions for use with asyncio.gather."""
@@ -434,13 +448,27 @@ async def upload_resume(profile_id: int, file: UploadFile = File(...), db: Sessi
 
     ext = os.path.splitext(file.filename)[1]
     filename = f"resume_{profile_id}{ext}"
-    filepath = os.path.join(UPLOAD_DIR, filename)
+    content = await file.read()
 
-    with open(filepath, "wb") as f:
-        content = await file.read()
-        f.write(content)
+    bucket = _get_gcs_bucket()
+    if bucket:
+        # Production: upload to Google Cloud Storage
+        blob = bucket.blob(f"resumes/{filename}")
+        blob.upload_from_string(content, content_type=file.content_type)
+        filepath = f"gs://{GCS_BUCKET}/resumes/{filename}"
+        # Also save locally for parsing
+        local_path = os.path.join(UPLOAD_DIR, filename)
+        with open(local_path, "wb") as f:
+            f.write(content)
+        resume_text = parse_resume(local_path)
+        os.remove(local_path)  # Clean up temp file
+    else:
+        # Local dev: save to filesystem
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        with open(filepath, "wb") as f:
+            f.write(content)
+        resume_text = parse_resume(filepath)
 
-    resume_text = parse_resume(filepath)
     profile.resume_path = filepath
     profile.resume_text = resume_text
     db.commit()
