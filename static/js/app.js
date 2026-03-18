@@ -169,9 +169,8 @@ async function loadProfile() {
             } catch(e) { /* profile view not yet active */ }
             showView('dugout');
         } else {
-            document.getElementById('no-profile-state').style.display = 'block';
-            document.getElementById('action-bar').style.display = 'none';
-            setProfileMode('paste');
+            // New user — send them straight to Profile to get started
+            showView('profile');
         }
     } catch (e) {
         console.error('Failed to load profile:', e);
@@ -654,7 +653,7 @@ function renderBaseballCardFront() {
     const pictureUrl = state.authUser?.picture_url || '';
 
     const avatarHTML = pictureUrl
-        ? `<img src="${esc(pictureUrl)}" alt="${esc(name)}" referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />`
+        ? `<img src="${esc(pictureUrl)}" alt="${esc(name)}" referrerpolicy="no-referrer" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />`
         : `${(firstName[0] || '') + (lastName[0] || '')}`;
 
     el.innerHTML = `
@@ -4485,7 +4484,6 @@ function updateNavAvatar() {
                 img.src = state.authUser.picture_url;
                 img.alt = state.authUser.name || '';
                 img.referrerPolicy = 'no-referrer';
-                img.crossOrigin = 'anonymous';
                 img.style.cssText = 'width:100%;height:100%;border-radius:50%;object-fit:cover;';
                 img.onerror = () => { img.remove(); if (el) { el.style.display = ''; el.textContent = getProfileInitials(state.profile); } };
                 container.appendChild(img);
