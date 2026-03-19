@@ -1638,8 +1638,8 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
     """
     global _serpapi_call_count
     _serpapi_call_count += 1
-    if _serpapi_call_count > 5:
-        logger.info(f"SerpAPI: skipping call #{_serpapi_call_count} (max 5 per session to preserve quota)")
+    if _serpapi_call_count > 10:
+        logger.info(f"SerpAPI: skipping call #{_serpapi_call_count} (max 10 per session to preserve quota)")
         return []
 
     api_key = os.environ.get("SERPAPI_KEY", "") or _get_source_config().get("serpapi", {}).get("api_key", "")
@@ -1647,7 +1647,27 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
         logger.warning("SerpAPI: no API key configured, skipping")
         return []
 
-    logger.info(f"SerpAPI call #{_serpapi_call_count}: q='{query}' loc='{location}'")
+    # Normalize location for SerpAPI (needs "Province/State, Country" format)
+    serpapi_loc = location
+    # "Milton, ON" → "Ontario, Canada", "Toronto, Ontario, Canada" → "Ontario, Canada"
+    ca_provinces = {"ON": "Ontario", "BC": "British Columbia", "AB": "Alberta", "QC": "Quebec",
+                    "MB": "Manitoba", "SK": "Saskatchewan", "NS": "Nova Scotia", "NB": "New Brunswick",
+                    "PE": "Prince Edward Island", "NL": "Newfoundland and Labrador"}
+    for abbr, full in ca_provinces.items():
+        if f", {abbr}" in location or location.endswith(f" {abbr}"):
+            serpapi_loc = f"{full}, Canada"
+            break
+    if ", Canada" in location:
+        # Already has province, extract it
+        parts = [p.strip() for p in location.split(",")]
+        for p in parts:
+            if p in ca_provinces.values():
+                serpapi_loc = f"{p}, Canada"
+                break
+    # Clean query: strip negative keywords for SerpAPI
+    clean_query = re.sub(r'\s+-"[^"]*"', '', query).strip() if '-"' in query else query
+
+    logger.info(f"SerpAPI call #{_serpapi_call_count}: q='{clean_query}' loc='{serpapi_loc}'")
     jobs = []
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -1655,7 +1675,8 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
                 "https://serpapi.com/search.json",
                 params={
                     "engine": "google_jobs",
-                    "q": f"{query} in {location}",
+                    "q": clean_query,
+                    "location": serpapi_loc,
                     "hl": "en",
                     "api_key": api_key,
                 },
