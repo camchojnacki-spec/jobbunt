@@ -682,19 +682,29 @@ async function searchJobs() {
         '✅ Almost done...'
     ];
     let stageIdx = 0;
-    if (empty) {
-        empty.style.display = 'block';
-        empty.innerHTML = `
-            <div style="text-align:center;padding:40px 20px">
-                <div style="font-size:48px;margin-bottom:16px">⚾</div>
-                <h2 style="margin-bottom:8px">Scouting for Jobs...</h2>
-                <p id="search-stage-text" style="color:var(--text-dim);margin-bottom:16px">${searchStages[0]}</p>
-                <div style="width:80%;max-width:400px;height:6px;background:var(--jb-surface-alt,#1a2744);border-radius:3px;margin:0 auto 12px">
-                    <div id="search-progress-bar" style="width:5%;height:100%;background:linear-gradient(90deg,#C4962C,#3DB87A);border-radius:3px;transition:width 0.5s ease"></div>
-                </div>
-                <p style="font-size:11px;color:var(--text-dim)">This typically takes 30-90 seconds depending on how many sources are enabled.</p>
-            </div>`;
+    // Insert progress banner at top of browse view, right after toolbar
+    let banner = document.getElementById('search-progress-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'search-progress-banner';
+        const browseView = document.getElementById('browse-view') || document.querySelector('[data-view="browse"]');
+        if (browseView) browseView.insertBefore(banner, browseView.children[1] || browseView.firstChild);
     }
+    banner.style.display = 'block';
+    banner.innerHTML = `
+        <div style="background:var(--jb-surface,#162744);border:1px solid var(--jb-border,#1e3a5f);border-radius:8px;padding:16px 20px;margin:8px 0 12px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+                <span style="font-size:24px">⚾</span>
+                <div style="flex:1">
+                    <div style="font-weight:600;font-size:14px;color:var(--text-bright,#e0e6ed)">Scouting for Jobs...</div>
+                    <div id="search-stage-text" style="font-size:12px;color:var(--text-dim,#8A9BB5);margin-top:2px">${searchStages[0]}</div>
+                </div>
+                <span style="font-size:11px;color:var(--text-dim,#8A9BB5)">~30-90s</span>
+            </div>
+            <div style="width:100%;height:4px;background:var(--jb-surface-alt,#1a2744);border-radius:2px">
+                <div id="search-progress-bar" style="width:5%;height:100%;background:linear-gradient(90deg,#C4962C,#3DB87A);border-radius:2px;transition:width 0.5s ease"></div>
+            </div>
+        </div>`;
     const _searchInterval = setInterval(() => {
         stageIdx = Math.min(stageIdx + 1, searchStages.length - 1);
         const stageEl = document.getElementById('search-stage-text');
@@ -752,9 +762,9 @@ async function searchJobs() {
         toast('Search failed: ' + e.message, 'error');
     } finally {
         clearInterval(_searchInterval);
-        // Complete the progress bar
-        const barEl = document.getElementById('search-progress-bar');
-        if (barEl) barEl.style.width = '100%';
+        // Remove progress banner
+        const progressBanner = document.getElementById('search-progress-banner');
+        if (progressBanner) progressBanner.remove();
         state.searching = false;
         searchBtns.forEach(btn => {
             btn.disabled = false;
