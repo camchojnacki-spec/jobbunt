@@ -659,7 +659,6 @@ async function searchJobs() {
         return;
     }
     if (state.searching) return; // Prevent double-click
-
     state.searching = true;
 
     // Disable all search buttons and show loading
@@ -669,55 +668,33 @@ async function searchJobs() {
         btn._origText = btn.textContent;
     });
 
-    // Show search progress — replace empty state content
+    // Show progress in empty state area
     const empty = document.getElementById('empty-state');
-    const searchStages = [
-        '🔍 Expanding search queries with AI...',
-        '🌐 Searching LinkedIn...',
-        '🌐 Searching Indeed...',
-        '🌐 Searching Glassdoor...',
-        '🌐 Searching government job boards...',
-        '📊 Scoring and ranking results...',
-        '🧹 Removing duplicates...',
-        '✅ Almost done...'
-    ];
-    let stageIdx = 0;
-
-    // Show progress directly in the empty state area so it's always visible
     if (empty) {
         empty.style.display = 'block';
-        empty.innerHTML = '';  // Clear "No jobs yet" content
-    }
-    let banner = document.getElementById('search-progress-banner');
-    if (!banner) {
-        banner = document.createElement('div');
-        banner.id = 'search-progress-banner';
-        // Put it in the empty state div if visible, otherwise in browse view
-        const parent = empty || document.getElementById('browse-view');
-        if (parent) parent.appendChild(banner);
-    }
-    banner.style.display = 'block';
-    banner.innerHTML = `
-        <div style="background:var(--jb-surface,#162744);border:1px solid var(--jb-border,#1e3a5f);border-radius:8px;padding:16px 20px;margin:8px 0 12px">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-                <span style="font-size:24px">⚾</span>
-                <div style="flex:1">
-                    <div style="font-weight:600;font-size:14px;color:var(--text-bright,#e0e6ed)">Scouting for Jobs...</div>
-                    <div id="search-stage-text" style="font-size:12px;color:var(--text-dim,#8A9BB5);margin-top:2px">${searchStages[0]}</div>
+        empty.innerHTML = `
+            <div style="max-width:500px;margin:40px auto;text-align:center">
+                <div style="font-size:48px;margin-bottom:16px">⚾</div>
+                <h2 id="search-status-title">Scouting for Jobs...</h2>
+                <p id="search-status-detail" style="color:var(--jb-text-dim)">Starting search across job boards...</p>
+                <div id="search-job-count" style="font-size:32px;font-weight:700;color:#3DB87A;margin:16px 0;display:none">0</div>
+                <div id="search-job-label" style="font-size:12px;color:var(--jb-text-dim);display:none">jobs found so far</div>
+                <div style="width:100%;max-width:300px;height:4px;background:var(--jb-surface-alt,#1a2744);border-radius:2px;margin:20px auto">
+                    <div id="search-progress-bar" style="width:5%;height:100%;background:linear-gradient(90deg,#C4962C,#3DB87A);border-radius:2px;transition:width 0.5s ease"></div>
                 </div>
-                <span style="font-size:11px;color:var(--text-dim,#8A9BB5)">~30-90s</span>
-            </div>
-            <div style="width:100%;height:4px;background:var(--jb-surface-alt,#1a2744);border-radius:2px">
-                <div id="search-progress-bar" style="width:5%;height:100%;background:linear-gradient(90deg,#C4962C,#3DB87A);border-radius:2px;transition:width 0.5s ease"></div>
-            </div>
-        </div>`;
-    const _searchInterval = setInterval(() => {
-        stageIdx = Math.min(stageIdx + 1, searchStages.length - 1);
-        const stageEl = document.getElementById('search-stage-text');
-        const barEl = document.getElementById('search-progress-bar');
-        if (stageEl) stageEl.textContent = searchStages[stageIdx];
-        if (barEl) barEl.style.width = Math.min(5 + (stageIdx / searchStages.length) * 85, 90) + '%';
-    }, 8000);
+                <div id="search-stage-text" style="font-size:11px;color:var(--jb-text-dim);margin-top:8px">Initializing...</div>
+            </div>`;
+    }
+
+    const stages = ['Expanding queries with AI...', 'Searching job boards...', 'Scoring results...', 'Finalizing...'];
+    let stageIdx = 0;
+    const stageInterval = setInterval(() => {
+        stageIdx = Math.min(stageIdx + 1, stages.length - 1);
+        const el = document.getElementById('search-stage-text');
+        if (el) el.textContent = stages[stageIdx];
+        const bar = document.getElementById('search-progress-bar');
+        if (bar) bar.style.width = Math.min(10 + stageIdx * 25, 90) + '%';
+    }, 15000);
 
     try {
         // Get selected sources from checkboxes
@@ -726,40 +703,60 @@ async function searchJobs() {
         const sourceParams = selectedSources.length > 0
             ? '?' + selectedSources.map(s => `sources=${s}`).join('&')
             : '';
-        const result = await api(`/profiles/${state.profileId}/search${sourceParams}`, { method: 'POST' });
-        toast(`Found ${result.new_jobs} new jobs (${result.duplicates_skipped} duplicates skipped)`, 'success');
 
-        // Update button to show verification phase
-        searchBtns.forEach(btn => {
-            btn.innerHTML = `<svg width="36" height="14" viewBox="0 0 120 40" fill="none" style="display:inline-block;vertical-align:middle;margin-right:4px">
-            <style>@keyframes dp2{0%,100%{opacity:.15;r:4}50%{opacity:.7;r:5.5}}</style>
-            <circle cx="30" cy="20" r="4" fill="#3DB87A" style="animation:dp2 1.2s ease-in-out infinite"/>
-            <circle cx="60" cy="20" r="4" fill="#3DB87A" style="animation:dp2 1.2s ease-in-out .2s infinite"/>
-            <circle cx="90" cy="20" r="4" fill="#3DB87A" style="animation:dp2 1.2s ease-in-out .4s infinite"/>
-        </svg>Verifying...`;
-        });
+        // Start search (returns immediately with task_id)
+        const { task_id } = await api(`/profiles/${state.profileId}/search${sourceParams}`, { method: 'POST' });
 
-        // Verify pending jobs are still active
-        try {
-            showActivity('Verifying job links...');
-            const verifyResult = await api(`/profiles/${state.profileId}/verify-pending`, { method: 'POST' });
-            if (verifyResult.expired > 0) {
-                toast(`${verifyResult.expired} expired jobs filtered out`, 'info');
+        // Poll for new jobs every 5 seconds while search runs
+        let jobPollCount = 0;
+        const jobPoller = setInterval(async () => {
+            try {
+                const recent = await api(`/profiles/${state.profileId}/jobs/recent`);
+                const newCount = recent.total_pending || 0;
+                if (newCount > jobPollCount) {
+                    jobPollCount = newCount;
+                    const countEl = document.getElementById('search-job-count');
+                    const labelEl = document.getElementById('search-job-label');
+                    if (countEl) { countEl.textContent = newCount; countEl.style.display = 'block'; }
+                    if (labelEl) labelEl.style.display = 'block';
+                    const detailEl = document.getElementById('search-status-detail');
+                    if (detailEl) detailEl.textContent = `Found ${newCount} jobs and counting...`;
+                }
+            } catch (e) { /* ignore poll errors */ }
+        }, 5000);
+
+        // Poll for task completion
+        let taskDone = false;
+        for (let i = 0; i < 120; i++) { // max 10 minutes (120 * 5s)
+            await new Promise(r => setTimeout(r, 5000));
+            try {
+                const task = await api(`/tasks/${task_id}`);
+                if (task.status === 'completed') {
+                    taskDone = true;
+                    const result = task.result || {};
+                    toast(`Found ${result.new_jobs || 0} new jobs (${result.duplicates_skipped || 0} duplicates skipped)`, 'success');
+                    break;
+                }
+                if (task.status === 'failed') {
+                    throw new Error(task.error || 'Search failed');
+                }
+            } catch (e) {
+                if (e.message && !e.message.includes('404')) {
+                    clearInterval(jobPoller);
+                    throw e;
+                }
             }
-        } catch (e) {
-            console.warn('Verification pass failed:', e);
         }
 
-        // AI-powered duplicate reconciliation
-        try {
-            showActivity('AI dedup reconciliation...');
-            const dedupResult = await api(`/profiles/${state.profileId}/reconcile-duplicates`, { method: 'POST' });
-            if (dedupResult.merged > 0) {
-                toast(`AI merged ${dedupResult.merged} duplicate listings`, 'info');
-            }
-        } catch (e) {
-            console.warn('AI dedup reconciliation failed (non-fatal):', e);
+        clearInterval(jobPoller);
+
+        if (!taskDone) {
+            toast('Search is still running in the background. Refresh to see results.', 'info');
         }
+
+        // Final load
+        const bar = document.getElementById('search-progress-bar');
+        if (bar) bar.style.width = '100%';
 
         await loadSwipeStack();
         loadStats();
@@ -767,10 +764,7 @@ async function searchJobs() {
     } catch (e) {
         toast('Search failed: ' + e.message, 'error');
     } finally {
-        clearInterval(_searchInterval);
-        // Remove progress banner
-        const progressBanner = document.getElementById('search-progress-banner');
-        if (progressBanner) progressBanner.remove();
+        clearInterval(stageInterval);
         state.searching = false;
         searchBtns.forEach(btn => {
             btn.disabled = false;
