@@ -651,24 +651,20 @@ async function saveProfile() {
 
 async function searchJobs() {
     if (!state.profileId) { toast('Create a profile first', 'error'); return; }
-    // Spring Training gate
     const stLevel = getSpringTrainingLevel();
     if (stLevel.level !== 'the_show') {
         toast('Complete The Climb to unlock search! Current level: ' + SPRING_TRAINING_LEVELS[stLevel.index].name, 'warning');
         showView('dugout');
         return;
     }
-    if (state.searching) return; // Prevent double-click
+    if (state.searching) return;
     state.searching = true;
 
-    // Disable all search buttons and show loading
+    // Disable search buttons
     const searchBtns = document.querySelectorAll('#btn-search-jobs, #btn-search-more, #btn-search-empty');
-    searchBtns.forEach(btn => {
-        btn.disabled = true;
-        btn._origText = btn.textContent;
-    });
+    searchBtns.forEach(btn => { btn.disabled = true; btn._origText = btn.textContent; });
 
-    // Show global search badge in top nav
+    // Show global search badge
     const badge = document.getElementById('search-status-badge');
     if (badge) {
         badge.style.display = 'flex';
@@ -677,130 +673,108 @@ async function searchJobs() {
         document.getElementById('search-badge-count').textContent = '0';
     }
 
-    // Show progress as a top banner in the scouting view
-    const browseToolbar = document.getElementById('browse-toolbar');
-    let progressBanner = document.getElementById('search-progress-banner');
-    if (!progressBanner && browseToolbar) {
-        progressBanner = document.createElement('div');
-        progressBanner.id = 'search-progress-banner';
-        browseToolbar.parentNode.insertBefore(progressBanner, browseToolbar.nextSibling);
-    }
-    if (progressBanner) {
-        progressBanner.style.display = 'block';
-        progressBanner.innerHTML = `
-            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:linear-gradient(135deg,rgba(61,184,122,.08),rgba(74,144,217,.08));border:1px solid rgba(61,184,122,.2);border-radius:8px;margin-bottom:12px">
-                <div style="font-size:24px;animation:search-dot-pulse 1.2s ease-in-out infinite">⚾</div>
-                <div style="flex:1">
-                    <div style="display:flex;align-items:center;gap:8px">
-                        <span style="font-weight:600;font-size:14px;color:var(--bright)">Scouting for Jobs...</span>
-                        <span id="search-job-count" style="font-weight:700;font-size:16px;color:#3DB87A;display:none">0</span>
-                        <span id="search-job-label" style="font-size:11px;color:var(--jb-text-dim);display:none">found</span>
-                    </div>
-                    <div id="search-status-detail" style="font-size:11px;color:var(--jb-text-dim);margin-top:2px">Starting search across job boards...</div>
-                    <div style="width:100%;height:3px;background:var(--jb-surface-alt,#1a2744);border-radius:2px;margin-top:6px">
-                        <div id="search-progress-bar" style="width:5%;height:100%;background:linear-gradient(90deg,#C4962C,#3DB87A);border-radius:2px;transition:width 0.5s ease"></div>
-                    </div>
-                </div>
-                <div id="search-stage-text" style="font-size:10px;color:var(--jb-text-dim);text-align:right;min-width:80px">Initializing...</div>
-            </div>`;
-    }
-
-    const stages = ['Expanding queries with AI...', 'Searching job boards...', 'Scoring results...', 'Finalizing...'];
-    let stageIdx = 0;
-    const stageInterval = setInterval(() => {
-        stageIdx = Math.min(stageIdx + 1, stages.length - 1);
-        const el = document.getElementById('search-stage-text');
-        if (el) el.textContent = stages[stageIdx];
-        const bar = document.getElementById('search-progress-bar');
-        if (bar) bar.style.width = Math.min(10 + stageIdx * 25, 90) + '%';
-    }, 15000);
+    // Show top banner
+    _showSearchBanner('Starting search across job boards...');
 
     try {
-        // Get selected sources from checkboxes
-        const selectedSources = Array.from(document.querySelectorAll('#source-selector input:checked'))
-            .map(cb => cb.value);
-        const sourceParams = selectedSources.length > 0
-            ? '?' + selectedSources.map(s => `sources=${s}`).join('&')
-            : '';
+        const selectedSources = Array.from(document.querySelectorAll('#source-selector input:checked')).map(cb => cb.value);
+        const sourceParams = selectedSources.length > 0 ? '?' + selectedSources.map(s => `sources=${s}`).join('&') : '';
 
-        // Start search (returns immediately with task_id)
+        // Kick off background search
         const { task_id } = await api(`/profiles/${state.profileId}/search${sourceParams}`, { method: 'POST' });
 
-        // Poll for new jobs every 5 seconds while search runs
-        let jobPollCount = 0;
-        const jobPoller = setInterval(async () => {
+        // Immediately load existing jobs so grid is visible
+        await loadSwipeStack();
+        showView('hunt');
+
+        // Poll every 4 seconds — refresh grid with new jobs as they arrive
+        let lastCount = state.swipeStack?.length || 0;
+        const poller = setInterval(async () => {
             try {
                 const recent = await api(`/profiles/${state.profileId}/jobs/recent`);
                 const newCount = recent.total_pending || 0;
-                if (newCount > jobPollCount) {
-                    jobPollCount = newCount;
-                    const countEl = document.getElementById('search-job-count');
-                    const labelEl = document.getElementById('search-job-label');
-                    if (countEl) { countEl.textContent = newCount; countEl.style.display = 'block'; }
-                    if (labelEl) labelEl.style.display = 'block';
-                    const detailEl = document.getElementById('search-status-detail');
-                    if (detailEl) detailEl.textContent = `Found ${newCount} jobs and counting...`;
-                    // Update global badge
-                    const badgeCount = document.getElementById('search-badge-count');
-                    if (badgeCount) badgeCount.textContent = newCount;
+                if (newCount > lastCount) {
+                    lastCount = newCount;
+                    // Refresh the grid with new jobs
+                    await loadSwipeStack();
+                    renderBrowseView();
+                    // Update banner + badge
+                    _updateSearchBanner(newCount);
+                    const bc = document.getElementById('search-badge-count');
+                    if (bc) bc.textContent = newCount;
                 }
-            } catch (e) { /* ignore poll errors */ }
-        }, 5000);
+            } catch (e) { /* ignore */ }
+        }, 4000);
 
         // Poll for task completion
         let taskDone = false;
-        for (let i = 0; i < 120; i++) { // max 10 minutes (120 * 5s)
-            await new Promise(r => setTimeout(r, 5000));
+        for (let i = 0; i < 150; i++) {
+            await new Promise(r => setTimeout(r, 4000));
             try {
                 const task = await api(`/tasks/${task_id}`);
                 if (task.status === 'completed') {
                     taskDone = true;
                     const result = task.result || {};
-                    toast(`Found ${result.new_jobs || 0} new jobs (${result.duplicates_skipped || 0} duplicates skipped)`, 'success');
+                    toast(`Search complete! ${result.new_jobs || 0} new jobs found`, 'success');
                     break;
                 }
-                if (task.status === 'failed') {
-                    throw new Error(task.error || 'Search failed');
-                }
+                if (task.status === 'failed') { throw new Error(task.error || 'Search failed'); }
             } catch (e) {
-                if (e.message && !e.message.includes('404')) {
-                    clearInterval(jobPoller);
-                    throw e;
-                }
+                if (e.message && !e.message.includes('404')) { clearInterval(poller); throw e; }
             }
         }
+        clearInterval(poller);
 
-        clearInterval(jobPoller);
-
-        if (!taskDone) {
-            toast('Search is still running in the background. Refresh to see results.', 'info');
-        }
-
-        // Final load — remove progress banner
-        const _progressBanner = document.getElementById('search-progress-banner');
-        if (_progressBanner) _progressBanner.style.display = 'none';
-
+        // Final refresh
         await loadSwipeStack();
+        renderBrowseView();
         loadStats();
-        showView('hunt');
+        _hideSearchBanner();
     } catch (e) {
         toast('Search failed: ' + e.message, 'error');
     } finally {
-        clearInterval(stageInterval);
         state.searching = false;
-        searchBtns.forEach(btn => {
-            btn.disabled = false;
-            btn.textContent = btn._origText || 'Search for Jobs';
-        });
-        // Update global badge to "done" state, auto-hide after 10s
-        const _badge = document.getElementById('search-status-badge');
-        if (_badge) {
-            _badge.classList.add('search-done');
-            const _badgeText = document.getElementById('search-badge-text');
-            if (_badgeText) _badgeText.textContent = 'Done!';
-            setTimeout(() => { _badge.style.display = 'none'; }, 10000);
+        searchBtns.forEach(btn => { btn.disabled = false; btn.textContent = btn._origText || 'Search for Jobs'; });
+        const _b = document.getElementById('search-status-badge');
+        if (_b) {
+            _b.classList.add('search-done');
+            const _bt = document.getElementById('search-badge-text');
+            if (_bt) _bt.textContent = 'Done!';
+            setTimeout(() => { _b.style.display = 'none'; }, 10000);
         }
     }
+}
+
+function _showSearchBanner(msg) {
+    const toolbar = document.getElementById('browse-toolbar');
+    let banner = document.getElementById('search-progress-banner');
+    if (!banner && toolbar) {
+        banner = document.createElement('div');
+        banner.id = 'search-progress-banner';
+        toolbar.parentNode.insertBefore(banner, toolbar.nextSibling);
+    }
+    if (banner) {
+        banner.style.display = 'block';
+        banner.innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:linear-gradient(135deg,rgba(61,184,122,.08),rgba(74,144,217,.08));border:1px solid rgba(61,184,122,.2);border-radius:8px;margin-bottom:8px">
+                <div style="font-size:18px;animation:search-dot-pulse 1.2s ease-in-out infinite">⚾</div>
+                <span style="font-weight:600;font-size:13px;color:var(--bright)">Scouting for Jobs...</span>
+                <span id="search-banner-count" style="font-weight:700;color:#3DB87A"></span>
+                <span id="search-banner-detail" style="font-size:11px;color:var(--jb-text-dim);flex:1">${msg}</span>
+            </div>`;
+    }
+}
+
+function _updateSearchBanner(count) {
+    const el = document.getElementById('search-banner-count');
+    if (el) el.textContent = count + ' found';
+    const detail = document.getElementById('search-banner-detail');
+    if (detail) detail.textContent = 'New jobs appearing below...';
+}
+
+function _hideSearchBanner() {
+    const banner = document.getElementById('search-progress-banner');
+    if (banner) banner.style.display = 'none';
 }
 
 async function rescoreJobs() {
