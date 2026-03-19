@@ -4077,6 +4077,28 @@ body::before {
     to { opacity: 1; transform: translateX(0); }
 }
 
+/* Search Status Badge (top nav, persistent across views) */
+.search-status-badge {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 20px; cursor: pointer;
+    background: rgba(61,184,122,.1); border: 1px solid rgba(61,184,122,.3);
+    font-size: 11px; color: #3DB87A; animation: activity-fade-in 0.3s ease;
+    transition: background 0.2s;
+}
+.search-status-badge:hover { background: rgba(61,184,122,.2); }
+.search-badge-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #3DB87A;
+    animation: search-dot-pulse 1.2s ease-in-out infinite;
+}
+@keyframes search-dot-pulse { 0%,100% { opacity:.4; transform:scale(.8); } 50% { opacity:1; transform:scale(1.2); } }
+.search-badge-text { font-weight: 500; }
+.search-badge-count { font-weight: 700; font-size: 12px; color: #fff; }
+.search-status-badge.search-done {
+    background: rgba(61,184,122,.15); border-color: rgba(61,184,122,.4);
+    animation: none;
+}
+.search-status-badge.search-done .search-badge-dot { animation: none; opacity: 1; }
+
 .activity-spinner {
     flex-shrink: 0;
 }

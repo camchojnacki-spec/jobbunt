@@ -668,6 +668,15 @@ async function searchJobs() {
         btn._origText = btn.textContent;
     });
 
+    // Show global search badge in top nav
+    const badge = document.getElementById('search-status-badge');
+    if (badge) {
+        badge.style.display = 'flex';
+        badge.classList.remove('search-done');
+        document.getElementById('search-badge-text').textContent = 'Searching...';
+        document.getElementById('search-badge-count').textContent = '0';
+    }
+
     // Show progress in empty state area
     const empty = document.getElementById('empty-state');
     if (empty) {
@@ -721,6 +730,9 @@ async function searchJobs() {
                     if (labelEl) labelEl.style.display = 'block';
                     const detailEl = document.getElementById('search-status-detail');
                     if (detailEl) detailEl.textContent = `Found ${newCount} jobs and counting...`;
+                    // Update global badge
+                    const badgeCount = document.getElementById('search-badge-count');
+                    if (badgeCount) badgeCount.textContent = newCount;
                 }
             } catch (e) { /* ignore poll errors */ }
         }, 5000);
@@ -770,6 +782,14 @@ async function searchJobs() {
             btn.disabled = false;
             btn.textContent = btn._origText || 'Search for Jobs';
         });
+        // Update global badge to "done" state, auto-hide after 10s
+        const _badge = document.getElementById('search-status-badge');
+        if (_badge) {
+            _badge.classList.add('search-done');
+            const _badgeText = document.getElementById('search-badge-text');
+            if (_badgeText) _badgeText.textContent = 'Done!';
+            setTimeout(() => { _badge.style.display = 'none'; }, 10000);
+        }
     }
 }
 
