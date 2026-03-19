@@ -16,6 +16,10 @@ from backend.database import get_db
 from backend.models.models import Job, Application, Profile, AgentQuestion, Company, ProfileQuestion, User
 from backend.auth import get_optional_user
 from backend.services.scraper import search_all_sources, save_scraped_jobs, fetch_job_details, _get_source_config, _save_source_config, get_source_health, AVAILABLE_SOURCES, SOURCE_CONFIG_PATH
+try:
+    from backend.services.dispatch import scrape_indeed
+except ImportError:
+    scrape_indeed = None
 from backend.services.scorer import score_job_basic, score_and_update_job, score_and_update_job_ai, score_job_multidim
 from backend.services.agent import start_application, process_application, answer_question, generate_cover_letter, submit_application
 from backend.services.resume_parser import parse_resume
@@ -2967,8 +2971,8 @@ def get_apply_readiness(profile_id: int, db: Session = Depends(get_db)):
     locations = _safe_json(profile.target_locations, [])
     strategy.append(check("Location preferences set", len(locations) >= 1, f"{len(locations)} locations" if locations else "Add target locations", "scroll:f-locations-input"))
 
-    # Remote preference is intentional
-    strategy.append(check("Remote preference set", profile.remote_preference and profile.remote_preference != "any", profile.remote_preference or "Set a specific preference", "scroll:f-remote"))
+    # Remote preference is intentional — "any" is a valid deliberate choice
+    strategy.append(check("Remote preference set", bool(profile.remote_preference), profile.remote_preference or "Set a preference", "scroll:f-remote"))
     add_search_category("Search Strategy", strategy)
 
     # ── Application Quality (Search Performance) ──────────────────────
@@ -4004,3 +4008,218 @@ async def test_source_config():
         },
         "sources": results,
     }
+
+
+# ── Dispatch Scout ─────────────────────────────────────────────────────
+# Receives jobs from external agents (e.g. Claude in Chrome browsing Indeed)
+
+class DispatchJob(BaseModel):
+    title: str
+    company: str = "Unknown"
+    location: str = ""
+    description: str = ""
+    url: str = ""
+    salary_text: str = ""
+    source: str = "indeed"
+
+class DispatchPayload(BaseModel):
+    jobs: list[DispatchJob]
+
+
+@router.post("/profiles/{profile_id}/dispatch")
+async def ingest_dispatched_jobs(
+    profile_id: int,
+    payload: DispatchPayload,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_optional_user),
+):
+    """Ingest jobs from an external dispatch agent (browser automation, Claude in Chrome, etc).
+
+    Accepts a list of raw job dicts, deduplicates, saves, and kicks off scoring.
+    """
+    profile = _get_profile_for_user(profile_id, user, db)
+    if not payload.jobs:
+        return {"ingested": 0, "message": "No jobs provided"}
+
+    raw_jobs = []
+    for j in payload.jobs:
+        raw_jobs.append({
+            "title": j.title,
+            "company": j.company,
+            "location": j.location,
+            "description": j.description,
+            "url": j.url,
+            "source": j.source,
+            "sources_seen": [j.source],
+            "salary_text": j.salary_text,
+        })
+
+    new_jobs = save_scraped_jobs(db, profile_id, raw_jobs)
+
+    # Score new jobs in background
+    if new_jobs:
+        background_tasks.add_task(_bg_score_dispatched, profile_id, [j.id for j in new_jobs])
+
+    return {
+        "ingested": len(new_jobs),
+        "duplicates_skipped": len(raw_jobs) - len(new_jobs),
+        "message": f"Dispatched {len(new_jobs)} new jobs from {payload.jobs[0].source if payload.jobs else 'unknown'}",
+    }
+
+
+async def _bg_score_dispatched(profile_id: int, job_ids: list[int]):
+    """Background: rule-score + enrich dispatched jobs."""
+    db = SessionLocal()
+    try:
+        profile = db.query(Profile).filter(Profile.id == profile_id).first()
+        if not profile:
+            return
+        for jid in job_ids:
+            job = db.query(Job).filter(Job.id == jid).first()
+            if not job:
+                continue
+            try:
+                score_and_update_job(db, job, profile)
+            except Exception as e:
+                logger.warning(f"Dispatch scoring failed for job {jid}: {e}")
+        # Kick off AI enrichment for new jobs
+        for jid in job_ids[:20]:  # Cap AI calls
+            job = db.query(Job).filter(Job.id == jid).first()
+            if job and not job.company_obj:
+                try:
+                    await enrich_job(db, job, profile)
+                except Exception as e:
+                    logger.debug(f"Dispatch enrichment failed for job {jid}: {e}")
+    finally:
+        db.close()
+
+
+@router.get("/profiles/{profile_id}/dispatch-config")
+def get_dispatch_config(
+    profile_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_optional_user),
+):
+    """Return search parameters for an external dispatch agent to use.
+
+    Gives the agent everything it needs: search queries, locations, and the
+    POST endpoint to send results back to.
+    """
+    profile = _get_profile_for_user(profile_id, user, db)
+
+    target_roles = []
+    if profile.target_roles:
+        try:
+            target_roles = json.loads(profile.target_roles) if isinstance(profile.target_roles, str) else profile.target_roles
+        except (json.JSONDecodeError, TypeError):
+            target_roles = [profile.target_roles]
+
+    locations = []
+    if profile.target_locations:
+        try:
+            locations = json.loads(profile.target_locations) if isinstance(profile.target_locations, str) else profile.target_locations
+        except (json.JSONDecodeError, TypeError):
+            locations = [profile.target_locations]
+    if not locations and profile.location:
+        locations = [profile.location]
+
+    # Build search URLs for Indeed
+    searches = []
+    for role in (target_roles or [""])[:5]:
+        for loc in (locations or [""])[:3]:
+            q = role.strip()
+            l = loc.strip()
+            indeed_url = f"https://www.indeed.com/jobs?q={q}&l={l}" if l else f"https://www.indeed.com/jobs?q={q}"
+            indeed_ca_url = f"https://ca.indeed.com/jobs?q={q}&l={l}" if l else f"https://ca.indeed.com/jobs?q={q}"
+            searches.append({
+                "query": q,
+                "location": l,
+                "indeed_url": indeed_url,
+                "indeed_ca_url": indeed_ca_url,
+            })
+
+    return {
+        "profile_id": profile_id,
+        "searches": searches,
+        "post_endpoint": f"/api/profiles/{profile_id}/dispatch",
+        "instructions": (
+            "For each search URL, navigate to the page, extract job cards "
+            "(title, company, location, URL, salary if visible, snippet/description), "
+            "then POST them as JSON to the dispatch endpoint. "
+            "Format: {\"jobs\": [{\"title\": ..., \"company\": ..., \"location\": ..., "
+            "\"url\": ..., \"description\": ..., \"salary_text\": ..., \"source\": \"indeed\"}]}"
+        ),
+    }
+
+
+@router.post("/profiles/{profile_id}/dispatch-run")
+async def run_dispatch_scout(
+    profile_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_optional_user),
+):
+    """Launch automated Indeed scraping via Playwright with the user's Chrome profile.
+
+    Opens a real Chrome window, navigates Indeed search pages, extracts job cards,
+    saves and scores them. Runs as a background task.
+    """
+    if scrape_indeed is None:
+        raise HTTPException(501, "Dispatch requires Playwright — only available on local dev, not Cloud Run")
+
+    profile = _get_profile_for_user(profile_id, user, db)
+
+    # Check if already running
+    existing = find_running_task("dispatch", profile_id)
+    if existing:
+        return {"task_id": existing, "status": "running"}
+
+    # Build search config
+    config = get_dispatch_config(profile_id, db=db, user=user)
+    searches = config["searches"]
+
+    if not searches:
+        return {"error": "No target roles or locations configured", "status": "error"}
+
+    task_id = run_background("dispatch", profile_id, _bg_dispatch, profile_id, searches)
+    return {"task_id": task_id, "status": "running"}
+
+
+async def _bg_dispatch(profile_id: int, searches: list[dict]):
+    """Background: run Playwright Indeed scrape, save & score results."""
+    db = SessionLocal()
+    try:
+        profile = db.query(Profile).filter(Profile.id == profile_id).first()
+        if not profile:
+            return {"error": "Profile not found"}
+
+        # Run the scraper (opens Chrome window)
+        raw_jobs = await scrape_indeed(searches, max_pages=2)
+        if not raw_jobs:
+            return {"ingested": 0, "message": "No jobs found — Indeed may have blocked the session"}
+
+        # Save & dedup
+        new_jobs = save_scraped_jobs(db, profile_id, raw_jobs)
+
+        # Score new jobs
+        for job in new_jobs:
+            try:
+                score_and_update_job(db, job, profile)
+            except Exception as e:
+                logger.warning(f"Dispatch scoring failed for job {job.id}: {e}")
+
+        # Enrich top jobs
+        for job in sorted(new_jobs, key=lambda j: j.match_score or 0, reverse=True)[:15]:
+            if not job.company_obj:
+                try:
+                    await enrich_job(db, job, profile)
+                except Exception:
+                    pass
+
+        return {
+            "ingested": len(new_jobs),
+            "duplicates_skipped": len(raw_jobs) - len(new_jobs),
+            "total_scraped": len(raw_jobs),
+        }
+    finally:
+        db.close()

@@ -2116,6 +2116,55 @@ body::before {
 }
 .skill-remove-btn:hover { background: rgba(232,41,28,0.15); }
 
+/* Skill audit chip layout */
+.skill-audit-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.skill-audit-chip {
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid;
+    background: none;
+    font-family: var(--jb-font);
+}
+.skill-audit-chip-add {
+    color: var(--green, #38a862);
+    border-color: var(--green, #38a862);
+}
+.skill-audit-chip-add:hover {
+    background: rgba(56,168,98,0.15);
+}
+.skill-audit-chip-remove {
+    color: var(--red, #e8291c);
+    border-color: var(--red, #e8291c);
+}
+.skill-audit-chip-remove:hover {
+    background: rgba(232,41,28,0.15);
+}
+.skill-audit-expand {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 6px;
+    background: none;
+    border: 1px dashed var(--wire, #333);
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-size: 12px;
+    cursor: pointer;
+    font-family: var(--jb-font);
+}
+.skill-audit-expand:hover {
+    border-color: var(--accent);
+    color: var(--text-bright);
+}
+
 .btn {
     font-family: var(--jb-font);
     font-weight: 600;

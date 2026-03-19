@@ -161,8 +161,9 @@ DIMENSION_LABELS = {
 def score_job_multidim(job: Job, profile: Profile, company: Company = None) -> dict:
     """Score a job across multiple dimensions. Returns full breakdown.
 
-    Calibrated for real variability: most jobs should land 35-65 overall.
-    75+ is genuinely strong. 85+ is rare and exceptional.
+    Calibrated for real variability: most jobs should land 45-75 overall.
+    Missing data (no salary, no company info) scores neutral (50), not penalized.
+    80+ is genuinely strong. 90+ is rare and exceptional.
     """
     breakdown = {}
     reasons = []
@@ -394,7 +395,7 @@ def score_job_multidim(job: Job, profile: Profile, company: Company = None) -> d
                                 reasons.append(f"Near seniority tier: {job_tier} level")
 
         if not target_roles:
-            role_score = 45  # no target = neutral-low
+            role_score = 50  # no target = neutral
 
         breakdown["role_fit"] = min(round(role_score), 100)
         if role_score >= 50 and best_role_match:
@@ -415,25 +416,31 @@ def score_job_multidim(job: Job, profile: Profile, company: Company = None) -> d
 
         if matched:
             ratio = len(matched) / len(skills)
+            # Adjust for large skill lists: matching 8/25 (32%) is more impressive
+            # than matching 2/6 (33%) — use absolute count as a floor boost
+            count_bonus = min(len(matched) * 2, 15) if len(skills) >= 10 else 0
             if ratio >= 0.8:
-                skills_score = 78 + round((ratio - 0.8) * 110)  # 78-100
+                skills_score = 82 + round((ratio - 0.8) * 90)   # 82-100
             elif ratio >= 0.5:
-                skills_score = 52 + round((ratio - 0.5) * 87)   # 52-78
+                skills_score = 60 + round((ratio - 0.5) * 73)   # 60-82
             elif ratio >= 0.3:
-                skills_score = 30 + round((ratio - 0.3) * 110)  # 30-52
+                skills_score = 40 + round((ratio - 0.3) * 100)  # 40-60
+            elif ratio >= 0.15:
+                skills_score = 25 + round((ratio - 0.15) * 100) # 25-40
             else:
-                skills_score = round(ratio * 100)                # 0-30
+                skills_score = round(ratio * 167)                # 0-25
+            skills_score = min(skills_score + count_bonus, 100)
             top_skills = matched[:4]
-            reasons.append(f"Skills: {', '.join(top_skills)}")
+            reasons.append(f"Skills: {', '.join(top_skills)} ({len(matched)}/{len(skills)})")
         else:
             skills_score = 10  # listed skills but zero matches = bad
     else:
-        skills_score = 45
+        skills_score = 50  # no skills listed = neutral
 
     breakdown["skills"] = min(skills_score, 100)
 
     # ── Location (0-100) ─────────────────────────────────────────────
-    loc_score = 40  # unknown location = below neutral
+    loc_score = 50  # unknown location = neutral
     if target_locations and job.location:
         loc_lower = job.location.lower()
         matched_loc = False
@@ -467,13 +474,13 @@ def score_job_multidim(job: Job, profile: Profile, company: Company = None) -> d
             reasons.append("Remote available")
 
     if not job.location and not remote_type:
-        loc_score = 35
+        loc_score = 50  # no location info = neutral, don't penalize
 
     breakdown["location"] = min(loc_score, 100)
 
     # ── Compensation (0-100) ──────────────────────────────────────────
     # Level-aware: considers whether salary is appropriate for the seniority
-    comp_score = 30  # no salary info = low confidence
+    comp_score = 50  # no salary info = neutral (don't penalize unlisted salary)
     if profile.min_salary and (job.salary_min or job.salary_max):
         job_max = job.salary_max or job.salary_min or 0
         job_min = job.salary_min or job.salary_max or 0
@@ -507,12 +514,12 @@ def score_job_multidim(job: Job, profile: Profile, company: Company = None) -> d
             comp_score = max(comp_score - 15, 5)  # senior underpay = bigger hit
 
     elif job.salary_estimated:
-        comp_score = 25
+        comp_score = 40  # estimated salary = slight uncertainty
 
     breakdown["compensation"] = comp_score
 
     # ── Seniority (0-100) ─────────────────────────────────────────────
-    seniority_score = 42  # unknown = below neutral
+    seniority_score = 50  # unknown = neutral
     level_map = {"entry": 1, "mid": 2, "senior": 3, "director": 4, "vp": 5, "c-suite": 6}
 
     candidate_level = level_map.get(
@@ -580,7 +587,7 @@ def score_job_multidim(job: Job, profile: Profile, company: Company = None) -> d
     breakdown["seniority"] = seniority_score
 
     # ── Culture Fit (0-100) ───────────────────────────────────────────
-    culture_score = 38  # no info = below neutral
+    culture_score = 50  # no info = neutral
     if company and values:
         company_signals = " ".join(filter(None, [
             company.culture_summary,

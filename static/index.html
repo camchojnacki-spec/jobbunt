@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260319b">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260319d">
     <script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
@@ -278,6 +278,9 @@
                             </button>
                             <button class="btn btn-secondary btn-sm" id="btn-rescore" onclick="rescoreJobs()">
                                 ♻ Rescore
+                            </button>
+                            <button class="btn btn-secondary btn-sm" id="btn-dispatch" onclick="dispatchScout()" title="Send scout agent to Indeed">
+                                📡 Dispatch
                             </button>
                         </div>
                         <div class="browse-toolbar-right">
@@ -706,6 +709,16 @@
                         </div>
                     </div>
 
+                    <!-- Resume Improver Section -->
+                    <div class="profile-section" id="resume-improver-section">
+                        <div class="profile-section-header" style="display:flex;justify-content:space-between;align-items:center">
+                            Batting Cage
+                            <button class="btn btn-sm btn-primary" onclick="improveResume()" id="improve-resume-btn">Improve My Resume</button>
+                        </div>
+                        <p style="color:var(--text-dim); font-size:12px; margin-bottom:10px">AI-powered suggestions to strengthen your resume so it gets past ATS filters and catches recruiter attention.</p>
+                        <div id="resume-improver-container"></div>
+                    </div>
+
                     <!-- Readiness badge area (JS inserts readiness-panel here) -->
 
                     <!-- ═══ STEP 2: Profile Form (auto-filled from resume) ═══ -->
@@ -855,15 +868,7 @@
                         </div>
                     </form>
 
-                    <!-- Resume Improver Section -->
-                    <div class="interview-section" id="resume-improver-section">
-                        <div class="profile-section-header" style="display:flex;justify-content:space-between;align-items:center">
-                            Batting Cage
-                            <button class="btn btn-sm btn-primary" onclick="improveResume()" id="improve-resume-btn">Improve My Resume</button>
-                        </div>
-                        <p style="color:var(--text-dim); font-size:12px; margin-bottom:10px">AI-powered suggestions to strengthen your resume so it gets past ATS filters and catches recruiter attention.</p>
-                        <div id="resume-improver-container"></div>
-                    </div>
+                    <!-- Resume Improver Section (moved to after resume upload) -->
 
                 </div>
                 </div><!-- end profile-tab-content-profile -->
@@ -1132,6 +1137,6 @@
         <div class="toast-container" id="toast-container"></div>
     </div>
 
-    <script src="/static/js/app.js?v=20260319f"></script>
+    <script src="/static/js/app.js?v=20260319k"></script>
 </body>
 </html>

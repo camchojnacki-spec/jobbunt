@@ -610,7 +610,7 @@ async def search_gcjobs(query: str, location: str, limit: int = 25) -> list[dict
             jobs.append({
                 "title": title_el.get_text(strip=True),
                 "company": dept_el.get_text(strip=True) if dept_el else "Government of Canada",
-                "location": loc_el.get_text(strip=True) if loc_el else location,
+                "location": loc_el.get_text(strip=True) if loc_el else "",
                 "description": "",
                 "url": href,
                 "source": "gcjobs",
@@ -955,7 +955,7 @@ async def search_jobbank(query: str, location: str, limit: int = 25) -> list[dic
                 jobs.append({
                     "title": title_text,
                     "company": company_el.get_text(strip=True) if company_el else "Unknown",
-                    "location": location_el.get_text(strip=True) if location_el else location,
+                    "location": location_el.get_text(strip=True) if location_el else "",
                     "description": "",
                     "url": href,
                     "source": "jobbank",
@@ -1078,7 +1078,7 @@ async def search_talent(query: str, location: str, limit: int = 25) -> list[dict
                                 jobs.append({
                                     "title": job_item.get("title", ""),
                                     "company": org.get("name", "Unknown") if isinstance(org, dict) else str(org),
-                                    "location": addr.get("addressLocality", location) if isinstance(addr, dict) else location,
+                                    "location": addr.get("addressLocality", "") if isinstance(addr, dict) else "",
                                     "description": (job_item.get("description", "") or "")[:2000],
                                     "url": job_item.get("url", ""),
                                     "source": "talent",
@@ -1090,7 +1090,7 @@ async def search_talent(query: str, location: str, limit: int = 25) -> list[dict
                             jobs.append({
                                 "title": item.get("title", ""),
                                 "company": org.get("name", "Unknown") if isinstance(org, dict) else str(org),
-                                "location": addr.get("addressLocality", location) if isinstance(addr, dict) else location,
+                                "location": addr.get("addressLocality", "") if isinstance(addr, dict) else "",
                                 "description": (item.get("description", "") or "")[:2000],
                                 "url": item.get("url", ""),
                                 "source": "talent",
@@ -1187,7 +1187,7 @@ async def search_talent(query: str, location: str, limit: int = 25) -> list[dict
                 jobs.append({
                     "title": title_text,
                     "company": company_el.get_text(strip=True) if company_el else "Unknown",
-                    "location": location_el.get_text(strip=True) if location_el else location,
+                    "location": location_el.get_text(strip=True) if location_el else "",
                     "description": "",
                     "url": href,
                     "source": "talent",
@@ -1314,7 +1314,7 @@ async def search_careerjet(query: str, location: str, limit: int = 25) -> list[d
                     jobs.append({
                         "title": title_text,
                         "company": company_text or "Unknown",
-                        "location": loc_text or location,
+                        "location": loc_text or "",
                         "description": "",
                         "url": href,
                         "source": "careerjet",
@@ -1362,7 +1362,7 @@ async def search_careerjet(query: str, location: str, limit: int = 25) -> list[d
                 jobs.append({
                     "title": title_text,
                     "company": company_el.get_text(strip=True) if company_el else "Unknown",
-                    "location": location_el.get_text(strip=True) if location_el else location,
+                    "location": location_el.get_text(strip=True) if location_el else "",
                     "description": desc_el.get_text(strip=True)[:500] if desc_el else "",
                     "url": href,
                     "source": "careerjet",
@@ -1614,7 +1614,7 @@ async def search_google_jobs(query: str, location: str, limit: int = 25) -> list
                     jobs.append({
                         "title": title_text,
                         "company": company_el.get_text(strip=True) if company_el else "Unknown",
-                        "location": location_el.get_text(strip=True) if location_el else location,
+                        "location": location_el.get_text(strip=True) if location_el else "",
                         "description": "",
                         "url": f"https://www.google.com/search?q={query}+jobs&ibp=htl;jobs",
                         "source": "google_jobs",
@@ -1671,61 +1671,88 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
     jobs = []
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(
-                "https://serpapi.com/search.json",
-                params={
+            # Paginate: fetch up to 2 pages (10 results each) if quota allows
+            for page_start in [0, 10]:
+                if page_start > 0:
+                    _serpapi_call_count += 1
+                    if _serpapi_call_count > 10:
+                        logger.info("SerpAPI: skipping page 2 (quota limit)")
+                        break
+                params = {
                     "engine": "google_jobs",
                     "q": clean_query,
                     "location": serpapi_loc,
                     "hl": "en",
                     "api_key": api_key,
-                },
-            )
-            if resp.status_code != 200:
-                logger.warning(f"SerpAPI returned status {resp.status_code}: {resp.text[:200]}")
-                return jobs
+                }
+                if page_start > 0:
+                    params["start"] = page_start
+                resp = await client.get("https://serpapi.com/search.json", params=params)
+                if resp.status_code != 200:
+                    logger.warning(f"SerpAPI returned status {resp.status_code}: {resp.text[:200]}")
+                    break
 
-            data = resp.json()
-            for item in data.get("jobs_results", [])[:limit]:
-                # Extract salary if available
-                salary = ""
-                detected = item.get("detected_extensions", {})
-                if detected.get("salary"):
-                    salary = detected["salary"]
+                data = resp.json()
+                page_results = data.get("jobs_results", [])
+                if not page_results:
+                    break
+                for item in page_results[:limit - len(jobs)]:
+                    # Extract salary if available
+                    salary = ""
+                    detected = item.get("detected_extensions", {})
+                    if detected.get("salary"):
+                        salary = detected["salary"]
 
-                # Get the source (Indeed, LinkedIn, etc.)
-                apply_links = item.get("apply_options", [])
-                source = "google_jobs"
-                url = ""
-                for link in apply_links:
-                    link_title = link.get("title", "").lower()
-                    if "indeed" in link_title:
-                        source = "indeed"
-                        url = link.get("link", "")
-                        break
-                    elif "linkedin" in link_title:
-                        source = "linkedin"
-                        url = link.get("link", "")
-                        break
-                    elif "glassdoor" in link_title:
-                        source = "glassdoor"
-                        url = link.get("link", "")
-                        break
-                    elif not url:
-                        url = link.get("link", "")
-                        source = link_title.replace(".com", "").strip() or "google_jobs"
+                    # Get ALL sources from apply options (multi-tagging)
+                    apply_links = item.get("apply_options", [])
+                    sources_seen = []
+                    primary_source = "google_jobs"
+                    url = ""
+                    # Priority order for primary source
+                    priority = {"indeed": 1, "linkedin": 2, "glassdoor": 3}
+                    best_priority = 99
+                    for link in apply_links:
+                        link_title = link.get("title", "").lower()
+                        link_url = link.get("link", "")
+                        # Identify known sources
+                        for known in ["indeed", "linkedin", "glassdoor", "ziprecruiter", "monster"]:
+                            if known in link_title:
+                                if known not in sources_seen:
+                                    sources_seen.append(known)
+                                p = priority.get(known, 50)
+                                if p < best_priority:
+                                    best_priority = p
+                                    primary_source = known
+                                    url = link_url
+                                break
+                        else:
+                            # Unknown source — use as fallback
+                            src_name = link_title.replace(".com", "").replace(".ca", "").strip() or "google_jobs"
+                            if src_name not in sources_seen:
+                                sources_seen.append(src_name)
+                            if not url:
+                                url = link_url
+                                if primary_source == "google_jobs":
+                                    primary_source = src_name
 
-                jobs.append({
-                    "title": item.get("title", ""),
-                    "company": item.get("company_name", "Unknown"),
-                    "location": item.get("location", location),
-                    "description": (item.get("description", "") or "")[:2000],
-                    "url": url,
-                    "source": source,
-                    "salary_text": salary,
-                    "job_type": detected.get("schedule_type", ""),
-                    "remote_type": "remote" if detected.get("work_from_home") else "",
-                })
+                    if not sources_seen:
+                        sources_seen = [primary_source]
+
+                    jobs.append({
+                        "title": item.get("title", ""),
+                        "company": item.get("company_name", "Unknown"),
+                        "location": item.get("location", location),
+                        "description": (item.get("description", "") or "")[:2000],
+                        "url": url,
+                        "source": primary_source,
+                        "sources_seen": sources_seen,
+                        "salary_text": salary,
+                        "job_type": detected.get("schedule_type", ""),
+                        "remote_type": "remote" if detected.get("work_from_home") else "",
+                    })
+
+                if len(page_results) < 10:
+                    break  # No more pages
 
             if jobs:
                 logger.info(f"SerpAPI Google Jobs: found {len(jobs)} results for '{query}' in '{location}'")
@@ -2358,6 +2385,29 @@ def _fuzzy_match_company(comp1: str, comp2: str) -> bool:
     return False
 
 
+def _sanitize_title(title: str) -> str:
+    """Strip scraping artifacts (source badges, metadata) from job titles."""
+    import re as _re
+    # Remove jobbank boilerplate
+    title = _re.sub(r'Posted on Job Bank.*?Job Bank\.?Job Bank', '', title, flags=_re.IGNORECASE)
+    title = _re.sub(r'Posted on Job Bank.*?Job Bank', '', title, flags=_re.IGNORECASE)
+    # Remove common source-name prefixes that get concatenated
+    prefixes = [
+        r'CareerBeacon', r'Direct Apply', r'indeed\.com', r'talent\.com',
+        r'civicjobs\.ca', r'outscal\.com', r'recruit\.net', r'jobrapido',
+        r'expertini', r'whatjobs', r'glassdoor', r'neuvoo',
+    ]
+    for pfx in prefixes:
+        title = _re.sub(r'^' + pfx + r'\s*', '', title, flags=_re.IGNORECASE)
+    # Remove leading "New", "On site", "Hybrid", "Remote" status badges
+    title = _re.sub(r'^(New\s*)?(On\s*site\s*)?(Hybrid\s*)?(Remote\s*)?', '', title, flags=_re.IGNORECASE)
+    title = title.strip()
+    # Capitalize first letter if lowercase
+    if title and title[0].islower():
+        title = title[0].upper() + title[1:]
+    return title
+
+
 def save_scraped_jobs(db: Session, profile_id: int, raw_jobs: list[dict]) -> list[Job]:
     """Save scraped jobs to DB, deduplicating by fingerprint + fuzzy matching. Returns new jobs only."""
     new_jobs = []
@@ -2372,7 +2422,7 @@ def save_scraped_jobs(db: Session, profile_id: int, raw_jobs: list[dict]) -> lis
     dupes_by_fuzzy = 0
 
     for raw in raw_jobs:
-        title = raw.get("title", "").strip()
+        title = _sanitize_title(raw.get("title", "").strip())
         company = raw.get("company", "").strip()
         if not title or not company:
             continue
@@ -2387,9 +2437,11 @@ def save_scraped_jobs(db: Session, profile_id: int, raw_jobs: list[dict]) -> lis
                 sources = json.loads(batch_job.sources_seen or "[]")
             except (json.JSONDecodeError, TypeError):
                 sources = [batch_job.source] if batch_job.source else []
-            if source not in sources:
-                sources.append(source)
-                batch_job.sources_seen = json.dumps(sources)
+            raw_sources = raw.get("sources_seen", [source])
+            for s in raw_sources:
+                if s not in sources:
+                    sources.append(s)
+            batch_job.sources_seen = json.dumps(sources)
             new_desc = raw.get("description", "")
             if new_desc and len(new_desc) > len(batch_job.description or ""):
                 batch_job.description = new_desc
@@ -2404,9 +2456,11 @@ def save_scraped_jobs(db: Session, profile_id: int, raw_jobs: list[dict]) -> lis
                 sources = json.loads(existing.sources_seen or "[]")
             except (json.JSONDecodeError, TypeError):
                 sources = [existing.source] if existing.source else []
-            if source not in sources:
-                sources.append(source)
-                existing.sources_seen = json.dumps(sources)
+            raw_sources = raw.get("sources_seen", [source])
+            for s in raw_sources:
+                if s not in sources:
+                    sources.append(s)
+            existing.sources_seen = json.dumps(sources)
             # Keep the longer description if the new one is better
             new_desc = raw.get("description", "")
             if new_desc and len(new_desc) > len(existing.description or ""):
@@ -2446,9 +2500,11 @@ def save_scraped_jobs(db: Session, profile_id: int, raw_jobs: list[dict]) -> lis
                 sources = json.loads(fuzzy_match.sources_seen or "[]")
             except (json.JSONDecodeError, TypeError):
                 sources = [fuzzy_match.source] if fuzzy_match.source else []
-            if source not in sources:
-                sources.append(source)
-                fuzzy_match.sources_seen = json.dumps(sources)
+            raw_sources = raw.get("sources_seen", [source])
+            for s in raw_sources:
+                if s not in sources:
+                    sources.append(s)
+            fuzzy_match.sources_seen = json.dumps(sources)
             fuzzy_match.last_seen = datetime.utcnow()
             # Keep better description
             new_desc = raw.get("description", "")
@@ -2469,7 +2525,7 @@ def save_scraped_jobs(db: Session, profile_id: int, raw_jobs: list[dict]) -> lis
             description=raw.get("description", ""),
             url=raw.get("url", ""),
             source=source,
-            sources_seen=json.dumps([source]),
+            sources_seen=json.dumps(raw.get("sources_seen", [source])),
             status="pending",
             scraped_at=datetime.utcnow(),
         )

@@ -45,6 +45,7 @@ let state = {
         salaryMin: '',
         keyword: '',
         datePosted: 'all',
+        source: 'all',
         sortBy: 'score',
         sortDir: 'desc',
         filtersOpen: false,
@@ -1048,6 +1049,12 @@ function getFilteredJobs(jobs) {
             const jobSalary = job.salary_max || job.salary_min || 0;
             if (jobSalary < f.salaryMin) return false;
         }
+        // Source filter
+        if (f.source !== 'all') {
+            const allSources = (job.sources_seen && job.sources_seen.length > 0) ? job.sources_seen : [job.source || 'unknown'];
+            const srcLower = allSources.map(s => s.toLowerCase());
+            if (!srcLower.includes(f.source.toLowerCase())) return false;
+        }
         // Keyword filter
         if (f.keyword.trim()) {
             const kw = f.keyword.toLowerCase();
@@ -1085,6 +1092,9 @@ function getFilteredJobs(jobs) {
             case 'company':
                 cmp = (a.company || '').localeCompare(b.company || '');
                 break;
+            case 'source':
+                cmp = (a.source || '').localeCompare(b.source || '');
+                break;
         }
         return f.sortDir === 'desc' ? -cmp : cmp;
     });
@@ -1099,6 +1109,7 @@ function countActiveFilters() {
     if (f.salaryMin !== '' && f.salaryMin > 0) count++;
     if (f.keyword.trim()) count++;
     if (f.datePosted !== 'all') count++;
+    if (f.source !== 'all') count++;
     return count;
 }
 
@@ -1108,6 +1119,7 @@ function clearFilters() {
     state.filters.salaryMin = '';
     state.filters.keyword = '';
     state.filters.datePosted = 'all';
+    state.filters.source = 'all';
     state.browsePage = 1;
     renderBrowseView();
 }
@@ -1134,6 +1146,19 @@ function toggleSortDir() {
 function toggleFiltersOpen() {
     state.filters.filtersOpen = !state.filters.filtersOpen;
     renderBrowseView();
+}
+
+function _getAvailableSources() {
+    const jobs = state.swipeStack || [];
+    const srcCounts = {};
+    for (const job of jobs) {
+        const allSrc = (job.sources_seen && job.sources_seen.length > 0) ? job.sources_seen : [job.source || 'unknown'];
+        for (const s of allSrc) {
+            const key = s.toLowerCase();
+            srcCounts[key] = (srcCounts[key] || 0) + 1;
+        }
+    }
+    return Object.entries(srcCounts).sort((a, b) => b[1] - a[1]);
 }
 
 function renderFilterBar(totalJobs, filteredCount) {
@@ -1184,6 +1209,12 @@ function renderFilterBar(totalJobs, filteredCount) {
                 <option value="24h" ${f.datePosted==='24h'?'selected':''}>Last 24h</option>
                 <option value="7d" ${f.datePosted==='7d'?'selected':''}>Last 7 days</option>
                 <option value="30d" ${f.datePosted==='30d'?'selected':''}>Last 30 days</option>
+            </select>
+            <select class="filter-select" onchange="updateFilter('source', this.value)">
+                <option value="all" ${f.source==='all'?'selected':''}>All Sources</option>
+                ${_getAvailableSources().map(([src, count]) =>
+                    `<option value="${esc(src)}" ${f.source===src?'selected':''}>${esc(src)} (${count})</option>`
+                ).join('')}
             </select>
             ${activeCount > 0 ? `<button class="filter-clear-btn" onclick="clearFilters()">Clear filters</button>` : ''}
         </div>` : ''}
@@ -2796,52 +2827,52 @@ async function runSkillsAudit() {
 
         let html = '<div class="skills-audit">';
 
-        // Current skills hit rates
-        html += '<h4>Your Skills vs. Job Market</h4>';
-        const sorted = Object.entries(data.skill_hits).sort((a, b) => b[1].pct - a[1].pct);
-        for (const [skill, info] of sorted) {
-            const color = info.pct >= 20 ? 'var(--green)' : info.pct >= 5 ? 'var(--accent)' : 'var(--red)';
-            html += `<div class="skill-audit-row">
-                <span style="min-width:140px;color:${color}">${esc(skill)}</span>
-                <div class="skill-bar"><div class="skill-bar-fill" style="width:${Math.min(info.pct, 100)}%;background:${color}"></div></div>
-                <span style="min-width:60px;text-align:right;color:var(--text-dim)">${info.pct}%</span>
-            </div>`;
-        }
-
-        // AI recommendations
+        // ── Actionable recommendations FIRST ──
         if (data.ai_audit) {
             const ai = data.ai_audit;
+            const hasRecs = ai.recommended_additions?.length || ai.missing_high_demand?.length;
+            const hasRemovals = ai.recommended_removals?.length;
 
-            if (ai.recommended_additions?.length) {
-                html += '<h4 style="margin-top:16px;color:var(--green)">Recommended Additions</h4>';
-                for (const skill of ai.recommended_additions) {
-                    html += `<div class="skill-audit-row">
-                        <span>${esc(skill)}</span>
-                        <button class="skill-add-btn" onclick="addSkillFromAudit('${esc(skill).replace(/'/g, "\\'")}', this)">+ Add</button>
-                    </div>`;
+            if (hasRecs) {
+                html += '<h4 style="color:var(--green)">Add These Skills</h4>';
+                html += '<div class="skill-audit-chips">';
+                for (const skill of [...(ai.missing_high_demand || []), ...(ai.recommended_additions || [])]) {
+                    html += `<button class="skill-audit-chip skill-audit-chip-add" onclick="addSkillFromAudit('${esc(skill).replace(/'/g, "\\'")}', this)">+ ${esc(skill)}</button>`;
                 }
+                html += '</div>';
             }
 
-            if (ai.recommended_removals?.length) {
-                html += '<h4 style="margin-top:16px;color:var(--red)">Consider Removing</h4>';
+            if (hasRemovals) {
+                html += '<h4 style="margin-top:12px;color:var(--red)">Consider Removing</h4>';
+                html += '<div class="skill-audit-chips">';
                 for (const skill of ai.recommended_removals) {
-                    html += `<div class="skill-audit-row">
-                        <span>${esc(skill)}</span>
-                        <button class="skill-remove-btn" onclick="removeSkillFromAudit('${esc(skill).replace(/'/g, "\\'")}', this)">Remove</button>
-                    </div>`;
+                    html += `<button class="skill-audit-chip skill-audit-chip-remove" onclick="removeSkillFromAudit('${esc(skill).replace(/'/g, "\\'")}', this)">&times; ${esc(skill)}</button>`;
                 }
-            }
-
-            if (ai.missing_high_demand?.length) {
-                html += '<h4 style="margin-top:16px;color:var(--accent-light)">High Demand (Missing)</h4>';
-                for (const skill of ai.missing_high_demand) {
-                    html += `<div class="skill-audit-row">
-                        <span>${esc(skill)}</span>
-                        <button class="skill-add-btn" onclick="addSkillFromAudit('${esc(skill).replace(/'/g, "\\'")}', this)">+ Add</button>
-                    </div>`;
-                }
+                html += '</div>';
             }
         }
+
+        // ── Market demand chart (compact: top 8 visible, rest collapsed) ──
+        const sorted = Object.entries(data.skill_hits).sort((a, b) => b[1].pct - a[1].pct);
+        const VISIBLE_COUNT = 8;
+        const hasMore = sorted.length > VISIBLE_COUNT;
+
+        html += `<h4 style="margin-top:16px;cursor:pointer" onclick="document.getElementById('skill-market-list').style.display=document.getElementById('skill-market-list').style.display==='none'?'block':'none';this.querySelector('.chevron').classList.toggle('rotated')">Your Skills vs. Job Market <span class="chevron" style="display:inline-block;font-size:10px;transition:transform 0.2s">&#9660;</span></h4>`;
+        html += '<div id="skill-market-list">';
+        for (let i = 0; i < sorted.length; i++) {
+            const [skill, info] = sorted[i];
+            const color = info.pct >= 20 ? 'var(--green)' : info.pct >= 5 ? 'var(--accent)' : 'var(--red)';
+            const hidden = i >= VISIBLE_COUNT ? ' style="display:none"' : '';
+            html += `<div class="skill-audit-row skill-market-row"${hidden} data-market-row>
+                <span style="min-width:140px;color:${color}">${esc(skill)}</span>
+                <div class="skill-bar"><div class="skill-bar-fill" style="width:${Math.min(info.pct * 5, 100)}%;background:${color}"></div></div>
+                <span style="min-width:50px;text-align:right;color:var(--text-dim);font-size:12px">${info.pct}%</span>
+            </div>`;
+        }
+        if (hasMore) {
+            html += `<button class="skill-audit-expand" onclick="document.querySelectorAll('[data-market-row]').forEach(r=>r.style.display='');this.remove()">Show all ${sorted.length} skills</button>`;
+        }
+        html += '</div>';
 
         html += '</div>';
         results.innerHTML = html;
@@ -3290,16 +3321,16 @@ async function loadApplyReadiness() {
         const pScore = data.profile_score != null ? data.profile_score : data.score;
         const scoreColor = pScore >= 80 ? '#4CAF50' : pScore >= 50 ? '#FFA726' : '#EF5350';
         const scoreTitle = pScore >= 80 ? 'Profile Ready' : 'Building Profile';
-        const totalChecks = (data.checks || []).length;
-        const passedChecks = (data.checks || []).filter(c => c.passed).length;
 
-        // Split checks into profile vs search tiers
-        const profileChecks = (data.checks || []).filter(c => c.tier !== 'search');
-        const searchChecks = (data.checks || []).filter(c => c.tier === 'search');
+        // Flatten checks from category groups
+        const profileChecks = (data.profile_categories || []).flatMap(cat => cat.checks || []);
+        const searchChecks = (data.search_categories || []).flatMap(cat => cat.checks || []);
+        const totalChecks = profileChecks.length + searchChecks.length;
+        const passedChecks = profileChecks.filter(c => c.passed).length + searchChecks.filter(c => c.passed).length;
         const profilePassed = profileChecks.filter(c => c.passed).length;
         const searchPassed = searchChecks.filter(c => c.passed).length;
-        const profileTierScore = profileChecks.length > 0 ? Math.round(profilePassed / profileChecks.length * 100) : 0;
-        const searchTierScore = searchChecks.length > 0 ? Math.round(searchPassed / searchChecks.length * 100) : 0;
+        const profileTierScore = data.profile_score != null ? data.profile_score : (profileChecks.length > 0 ? Math.round(profilePassed / profileChecks.length * 100) : 0);
+        const searchTierScore = data.search_score != null ? data.search_score : (searchChecks.length > 0 ? Math.round(searchPassed / searchChecks.length * 100) : 0);
 
         function renderCheck(c) {
             const actionAttr = (!c.passed && c.action) ? ` onclick="handleReadinessAction('${esc(c.action)}')"` : '';
@@ -6579,3 +6610,197 @@ window.loadSpringTraining = loadSpringTraining;
 window.handleReadinessAction = handleReadinessAction;
 window.toggleReadinessTier = toggleReadinessTier;
 window.resetReporterCorner = resetReporterCorner;
+window.dispatchScout = dispatchScout;
+window.closeDispatchModal = closeDispatchModal;
+window.runDispatch = runDispatch;
+window.ingestDispatchResults = ingestDispatchResults;
+
+// ── Dispatch Scout ──────────────────────────────────────────────────────
+// Opens a modal with Indeed search URLs; user opens them in their browser,
+// then pastes job data back or uses the bookmarklet to extract & send.
+
+async function dispatchScout() {
+    if (!state.profileId) { toast('Create a profile first', 'error'); return; }
+
+    showActivity('Loading dispatch config...');
+    try {
+        const config = await api(`/profiles/${state.profileId}/dispatch-config`);
+        hideActivity();
+
+        const modal = document.createElement('div');
+        modal.id = 'dispatch-modal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width:700px">
+                <div class="modal-header">
+                    <h3>DISPATCH SCOUT</h3>
+                    <button class="modal-close" onclick="closeDispatchModal()">&times;</button>
+                </div>
+                <div class="modal-body" style="max-height:70vh;overflow-y:auto">
+                    <p style="color:var(--muted);margin-bottom:12px">
+                        Send a scout agent to browse Indeed using your Chrome profile and bring back jobs automatically.
+                    </p>
+
+                    <div style="display:flex;gap:8px;margin-bottom:16px">
+                        <button class="btn btn-primary" onclick="runDispatch()" id="btn-dispatch-run">
+                            Launch Scout
+                        </button>
+                        <span id="dispatch-status" style="color:var(--muted);font-size:13px;align-self:center"></span>
+                    </div>
+
+                    <div id="dispatch-progress" style="display:none;margin-bottom:16px">
+                        <div style="background:var(--surface);border:1px solid var(--wire);border-radius:6px;padding:12px">
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <div class="spinner" style="width:16px;height:16px"></div>
+                                <span id="dispatch-progress-text" style="color:var(--cyan);font-size:13px">Launching Chrome...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h4 style="color:var(--cyan);margin-bottom:8px">Searches (${config.searches.length})</h4>
+                    <div class="dispatch-links" style="max-height:200px;overflow-y:auto">
+                        ${config.searches.map((s, i) => `
+                            <div class="dispatch-link-row" style="display:flex;gap:8px;margin-bottom:4px;align-items:center">
+                                <span style="color:var(--muted);font-size:12px;min-width:20px">${i+1}.</span>
+                                <span style="flex:1;font-size:12px;color:var(--fg)">${esc(s.query)} — ${esc(s.location)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <details style="margin-top:16px">
+                        <summary style="color:var(--muted);cursor:pointer;font-size:12px">Manual paste mode</summary>
+                        <div style="margin-top:8px">
+                            <p style="color:var(--muted);font-size:12px;margin-bottom:8px">
+                                Paste jobs manually: <code style="font-size:11px">Title | Company | Location | URL</code>
+                            </p>
+                            <textarea id="dispatch-paste" rows="6" style="width:100%;background:var(--surface);color:var(--fg);border:1px solid var(--wire);border-radius:4px;padding:8px;font-size:12px;font-family:monospace"
+                                placeholder="Director of IT Security | Acme Corp | Toronto, ON | https://indeed.com/viewjob?jk=abc123"></textarea>
+                            <button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="ingestDispatchResults()">Import Pasted</button>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    } catch (e) {
+        hideActivity();
+        toast('Failed to load dispatch config: ' + e.message, 'error');
+    }
+}
+
+function closeDispatchModal() {
+    document.getElementById('dispatch-modal')?.remove();
+}
+
+async function ingestDispatchResults() {
+    const textarea = document.getElementById('dispatch-paste');
+    if (!textarea) return;
+    const text = textarea.value.trim();
+    if (!text) { toast('Paste some job listings first', 'warning'); return; }
+
+    const lines = text.split('\n').filter(l => l.trim());
+    const jobs = [];
+    for (const line of lines) {
+        const parts = line.split('|').map(p => p.trim());
+        if (parts.length >= 2) {
+            jobs.push({
+                title: parts[0] || 'Unknown',
+                company: parts[1] || 'Unknown',
+                location: parts[2] || '',
+                url: parts[3] || '',
+                description: parts[4] || '',
+                salary_text: parts[5] || '',
+                source: 'indeed',
+            });
+        }
+    }
+
+    if (!jobs.length) { toast('Could not parse any jobs from the pasted text', 'error'); return; }
+
+    showActivity(`Importing ${jobs.length} jobs...`);
+    try {
+        const result = await api(`/profiles/${state.profileId}/dispatch`, {
+            method: 'POST',
+            body: JSON.stringify({ jobs }),
+        });
+        hideActivity();
+        toast(`Imported ${result.ingested} jobs (${result.duplicates_skipped} dupes skipped)`, 'success');
+        closeDispatchModal();
+        // Refresh the job list
+        await loadSwipeStack();
+        renderBrowseView();
+    } catch (e) {
+        hideActivity();
+        toast('Import failed: ' + e.message, 'error');
+    }
+}
+
+async function runDispatch() {
+    const btn = document.getElementById('btn-dispatch-run');
+    const progress = document.getElementById('dispatch-progress');
+    const progressText = document.getElementById('dispatch-progress-text');
+    const status = document.getElementById('dispatch-status');
+
+    if (btn) btn.disabled = true;
+    if (progress) progress.style.display = 'block';
+    if (progressText) progressText.textContent = 'Launching Chrome with your profile...';
+
+    try {
+        const { task_id, status: taskStatus } = await api(`/profiles/${state.profileId}/dispatch-run`, { method: 'POST' });
+
+        if (taskStatus === 'error') {
+            toast('Dispatch failed to start', 'error');
+            if (btn) btn.disabled = false;
+            if (progress) progress.style.display = 'none';
+            return;
+        }
+
+        // Poll for completion
+        if (progressText) progressText.textContent = 'Scouting Indeed — this may take a minute...';
+        let lastCount = state.swipeStack?.length || 0;
+
+        const poller = setInterval(async () => {
+            try {
+                const taskResult = await api(`/tasks/${task_id}`);
+
+                if (taskResult.status === 'done') {
+                    clearInterval(poller);
+                    const result = taskResult.result || {};
+                    const msg = `Scout returned: ${result.total_scraped || 0} found, ${result.ingested || 0} new, ${result.duplicates_skipped || 0} dupes`;
+                    if (progressText) progressText.textContent = msg;
+                    if (status) status.textContent = '';
+                    toast(msg, 'success');
+                    if (btn) { btn.disabled = false; btn.textContent = 'Launch Scout'; }
+                    // Refresh job list
+                    await loadSwipeStack();
+                    renderBrowseView();
+                    // Hide progress after a moment
+                    setTimeout(() => { if (progress) progress.style.display = 'none'; }, 5000);
+                } else if (taskResult.status === 'error') {
+                    clearInterval(poller);
+                    if (progressText) progressText.textContent = 'Scout failed: ' + (taskResult.error || 'unknown error');
+                    toast('Dispatch failed: ' + (taskResult.error || 'unknown'), 'error');
+                    if (btn) btn.disabled = false;
+                } else {
+                    // Still running — check for new jobs
+                    const recent = await api(`/profiles/${state.profileId}/jobs/recent`);
+                    const newCount = recent.total_pending || 0;
+                    if (newCount > lastCount) {
+                        const delta = newCount - lastCount;
+                        lastCount = newCount;
+                        if (progressText) progressText.textContent = `Scouting Indeed... ${delta} new jobs found so far`;
+                        await loadSwipeStack();
+                        renderBrowseView();
+                    }
+                }
+            } catch (e) {
+                // Polling error — keep trying
+            }
+        }, 4000);
+
+    } catch (e) {
+        toast('Failed to launch dispatch: ' + e.message, 'error');
+        if (btn) btn.disabled = false;
+        if (progress) progress.style.display = 'none';
+    }
+}
