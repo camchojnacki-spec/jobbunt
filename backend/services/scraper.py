@@ -1644,8 +1644,10 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
 
     api_key = os.environ.get("SERPAPI_KEY", "") or _get_source_config().get("serpapi", {}).get("api_key", "")
     if not api_key:
+        logger.warning("SerpAPI: no API key configured, skipping")
         return []
 
+    logger.info(f"SerpAPI call #{_serpapi_call_count}: q='{query}' loc='{location}'")
     jobs = []
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -1659,7 +1661,7 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
                 },
             )
             if resp.status_code != 200:
-                logger.warning(f"SerpAPI returned status {resp.status_code}")
+                logger.warning(f"SerpAPI returned status {resp.status_code}: {resp.text[:200]}")
                 return jobs
 
             data = resp.json()

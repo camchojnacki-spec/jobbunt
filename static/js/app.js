@@ -677,21 +677,31 @@ async function searchJobs() {
         document.getElementById('search-badge-count').textContent = '0';
     }
 
-    // Show progress in empty state area
-    const empty = document.getElementById('empty-state');
-    if (empty) {
-        empty.style.display = 'block';
-        empty.innerHTML = `
-            <div style="max-width:500px;margin:40px auto;text-align:center">
-                <div style="font-size:48px;margin-bottom:16px">⚾</div>
-                <h2 id="search-status-title">Scouting for Jobs...</h2>
-                <p id="search-status-detail" style="color:var(--jb-text-dim)">Starting search across job boards...</p>
-                <div id="search-job-count" style="font-size:32px;font-weight:700;color:#3DB87A;margin:16px 0;display:none">0</div>
-                <div id="search-job-label" style="font-size:12px;color:var(--jb-text-dim);display:none">jobs found so far</div>
-                <div style="width:100%;max-width:300px;height:4px;background:var(--jb-surface-alt,#1a2744);border-radius:2px;margin:20px auto">
-                    <div id="search-progress-bar" style="width:5%;height:100%;background:linear-gradient(90deg,#C4962C,#3DB87A);border-radius:2px;transition:width 0.5s ease"></div>
+    // Show progress as a top banner in the scouting view
+    const browseToolbar = document.getElementById('browse-toolbar');
+    let progressBanner = document.getElementById('search-progress-banner');
+    if (!progressBanner && browseToolbar) {
+        progressBanner = document.createElement('div');
+        progressBanner.id = 'search-progress-banner';
+        browseToolbar.parentNode.insertBefore(progressBanner, browseToolbar.nextSibling);
+    }
+    if (progressBanner) {
+        progressBanner.style.display = 'block';
+        progressBanner.innerHTML = `
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:linear-gradient(135deg,rgba(61,184,122,.08),rgba(74,144,217,.08));border:1px solid rgba(61,184,122,.2);border-radius:8px;margin-bottom:12px">
+                <div style="font-size:24px;animation:search-dot-pulse 1.2s ease-in-out infinite">⚾</div>
+                <div style="flex:1">
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <span style="font-weight:600;font-size:14px;color:var(--bright)">Scouting for Jobs...</span>
+                        <span id="search-job-count" style="font-weight:700;font-size:16px;color:#3DB87A;display:none">0</span>
+                        <span id="search-job-label" style="font-size:11px;color:var(--jb-text-dim);display:none">found</span>
+                    </div>
+                    <div id="search-status-detail" style="font-size:11px;color:var(--jb-text-dim);margin-top:2px">Starting search across job boards...</div>
+                    <div style="width:100%;height:3px;background:var(--jb-surface-alt,#1a2744);border-radius:2px;margin-top:6px">
+                        <div id="search-progress-bar" style="width:5%;height:100%;background:linear-gradient(90deg,#C4962C,#3DB87A);border-radius:2px;transition:width 0.5s ease"></div>
+                    </div>
                 </div>
-                <div id="search-stage-text" style="font-size:11px;color:var(--jb-text-dim);margin-top:8px">Initializing...</div>
+                <div id="search-stage-text" style="font-size:10px;color:var(--jb-text-dim);text-align:right;min-width:80px">Initializing...</div>
             </div>`;
     }
 
@@ -766,9 +776,9 @@ async function searchJobs() {
             toast('Search is still running in the background. Refresh to see results.', 'info');
         }
 
-        // Final load
-        const bar = document.getElementById('search-progress-bar');
-        if (bar) bar.style.width = '100%';
+        // Final load — remove progress banner
+        const _progressBanner = document.getElementById('search-progress-banner');
+        if (_progressBanner) _progressBanner.style.display = 'none';
 
         await loadSwipeStack();
         loadStats();
