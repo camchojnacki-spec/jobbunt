@@ -669,7 +669,7 @@ async function searchJobs() {
         btn._origText = btn.textContent;
     });
 
-    // Show search progress overlay in the empty state area
+    // Show search progress — replace empty state content
     const empty = document.getElementById('empty-state');
     const searchStages = [
         '🔍 Expanding search queries with AI...',
@@ -682,13 +682,19 @@ async function searchJobs() {
         '✅ Almost done...'
     ];
     let stageIdx = 0;
-    // Insert progress banner at top of browse view, right after toolbar
+
+    // Show progress directly in the empty state area so it's always visible
+    if (empty) {
+        empty.style.display = 'block';
+        empty.innerHTML = '';  // Clear "No jobs yet" content
+    }
     let banner = document.getElementById('search-progress-banner');
     if (!banner) {
         banner = document.createElement('div');
         banner.id = 'search-progress-banner';
-        const browseView = document.getElementById('browse-view') || document.querySelector('[data-view="browse"]');
-        if (browseView) browseView.insertBefore(banner, browseView.children[1] || browseView.firstChild);
+        // Put it in the empty state div if visible, otherwise in browse view
+        const parent = empty || document.getElementById('browse-view');
+        if (parent) parent.appendChild(banner);
     }
     banner.style.display = 'block';
     banner.innerHTML = `
