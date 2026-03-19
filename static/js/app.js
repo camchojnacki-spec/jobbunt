@@ -667,13 +667,41 @@ async function searchJobs() {
     searchBtns.forEach(btn => {
         btn.disabled = true;
         btn._origText = btn.textContent;
-        btn.innerHTML = `<svg width="36" height="14" viewBox="0 0 120 40" fill="none" style="display:inline-block;vertical-align:middle;margin-right:4px">
-            <style>@keyframes dp{0%,100%{opacity:.15;r:4}50%{opacity:.7;r:5.5}}</style>
-            <circle cx="30" cy="20" r="4" fill="#C4962C" style="animation:dp 1.2s ease-in-out infinite"/>
-            <circle cx="60" cy="20" r="4" fill="#C4962C" style="animation:dp 1.2s ease-in-out .2s infinite"/>
-            <circle cx="90" cy="20" r="4" fill="#C4962C" style="animation:dp 1.2s ease-in-out .4s infinite"/>
-        </svg>Searching...`;
     });
+
+    // Show search progress overlay in the empty state area
+    const empty = document.getElementById('empty-state');
+    const searchStages = [
+        '🔍 Expanding search queries with AI...',
+        '🌐 Searching LinkedIn...',
+        '🌐 Searching Indeed...',
+        '🌐 Searching Glassdoor...',
+        '🌐 Searching government job boards...',
+        '📊 Scoring and ranking results...',
+        '🧹 Removing duplicates...',
+        '✅ Almost done...'
+    ];
+    let stageIdx = 0;
+    if (empty) {
+        empty.style.display = 'block';
+        empty.innerHTML = `
+            <div style="text-align:center;padding:40px 20px">
+                <div style="font-size:48px;margin-bottom:16px">⚾</div>
+                <h2 style="margin-bottom:8px">Scouting for Jobs...</h2>
+                <p id="search-stage-text" style="color:var(--text-dim);margin-bottom:16px">${searchStages[0]}</p>
+                <div style="width:80%;max-width:400px;height:6px;background:var(--jb-surface-alt,#1a2744);border-radius:3px;margin:0 auto 12px">
+                    <div id="search-progress-bar" style="width:5%;height:100%;background:linear-gradient(90deg,#C4962C,#3DB87A);border-radius:3px;transition:width 0.5s ease"></div>
+                </div>
+                <p style="font-size:11px;color:var(--text-dim)">This typically takes 30-90 seconds depending on how many sources are enabled.</p>
+            </div>`;
+    }
+    const _searchInterval = setInterval(() => {
+        stageIdx = Math.min(stageIdx + 1, searchStages.length - 1);
+        const stageEl = document.getElementById('search-stage-text');
+        const barEl = document.getElementById('search-progress-bar');
+        if (stageEl) stageEl.textContent = searchStages[stageIdx];
+        if (barEl) barEl.style.width = Math.min(5 + (stageIdx / searchStages.length) * 85, 90) + '%';
+    }, 8000);
 
     try {
         // Get selected sources from checkboxes
@@ -723,6 +751,10 @@ async function searchJobs() {
     } catch (e) {
         toast('Search failed: ' + e.message, 'error');
     } finally {
+        clearInterval(_searchInterval);
+        // Complete the progress bar
+        const barEl = document.getElementById('search-progress-bar');
+        if (barEl) barEl.style.width = '100%';
         state.searching = false;
         searchBtns.forEach(btn => {
             btn.disabled = false;
