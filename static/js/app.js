@@ -211,7 +211,25 @@ async function loadProfile() {
             } catch(e) { /* profile view not yet active */ }
             showView('dugout');
         } else {
-            // New user — send them straight to Profile to get started
+            // New user — auto-create a profile from auth data, then go to Profile
+            try {
+                const name = state.authUser?.name || 'New User';
+                const email = state.authUser?.email || '';
+                const newProfile = await api('/profiles', {
+                    method: 'POST',
+                    body: { name, email }
+                });
+                state.profile = newProfile;
+                state.profileId = newProfile.id;
+                state.tags.roles = newProfile.target_roles || [];
+                state.tags.locations = newProfile.target_locations || [];
+                state.tags.skills = newProfile.skills || [];
+                updateNavAvatar();
+                populateProfileDropdown([newProfile]);
+                toast('Welcome! Let\u2019s build your profile.', 'info');
+            } catch(e) {
+                console.warn('Auto-create profile failed:', e);
+            }
             showView('profile');
         }
     } catch (e) {
@@ -5458,68 +5476,69 @@ async function _doImproveResume(el) {
 // Question types: 'single' (pick one), 'multi' (pick many), 'boolean' (yes/no), 'text' (free-form)
 // level: which Spring Training level this question advances (single_a, double_a, triple_a)
 const REPORTER_QUESTIONS = [
-    // ── SINGLE-A: Core profile fields ──────────────────────────────────────
-    { q: "What seniority level are you targeting?", type: "single", level: "single_a",
-      choices: ["Manager / Senior Manager", "Director", "VP / SVP", "C-Suite (CISO, CTO, etc.)"],
+    // ── SINGLE-A: Core job search parameters ───────────────────────────────
+    { q: "What level of role are you targeting?", type: "single", level: "single_a",
+      choices: ["Entry-level / Junior", "Mid-level / Intermediate", "Senior / Lead", "Manager / Senior Manager", "Director / VP", "Executive (C-Suite)"],
       profileField: "seniority_level", fillsProfile: true,
-      mapTo: { "Manager / Senior Manager": "senior", "Director": "director", "VP / SVP": "vp", "C-Suite (CISO, CTO, etc.)": "c-suite" } },
-    { q: "What's your minimum salary expectation?", type: "single", level: "single_a",
-      choices: ["$100K - $130K", "$130K - $160K", "$160K - $200K", "$200K+"],
+      mapTo: { "Entry-level / Junior": "entry", "Mid-level / Intermediate": "mid", "Senior / Lead": "senior", "Manager / Senior Manager": "manager", "Director / VP": "director", "Executive (C-Suite)": "c-suite" } },
+    { q: "What's your target salary range?", type: "single", level: "single_a",
+      choices: ["Under $50K", "$50K - $80K", "$80K - $120K", "$120K - $160K", "$160K - $200K", "$200K+"],
       profileField: "min_salary", fillsProfile: true,
-      mapTo: { "$100K - $130K": "100000", "$130K - $160K": "130000", "$160K - $200K": "160000", "$200K+": "200000" } },
+      mapTo: { "Under $50K": "40000", "$50K - $80K": "50000", "$80K - $120K": "80000", "$120K - $160K": "120000", "$160K - $200K": "160000", "$200K+": "200000" } },
     { q: "How soon are you looking to start?", type: "single", level: "single_a",
       choices: ["Immediately", "Within 1 month", "2 - 3 months", "Just exploring"],
       profileField: "availability", fillsProfile: true },
 
-    // ── DOUBLE-A: Preferences & logistics ──────────────────────────────────
+    // ── DOUBLE-A: Work preferences & logistics ─────────────────────────────
     { q: "What's your preferred work setup?", type: "single", level: "double_a",
       choices: ["Fully remote", "Hybrid (2-3 days in office)", "On-site", "No preference"],
       profileField: "remote_preference", fillsProfile: true,
       mapTo: { "Fully remote": "remote", "Hybrid (2-3 days in office)": "hybrid", "On-site": "onsite", "No preference": "any" } },
-    { q: "Are you open to contract or consulting roles?", type: "single", level: "double_a",
-      choices: ["Permanent only", "Open to contract", "Prefer contract / consulting", "No preference"],
+    { q: "What type of employment are you looking for?", type: "multi", level: "double_a",
+      choices: ["Full-time permanent", "Contract / Temp", "Part-time", "Freelance / Consulting", "Internship / Co-op"],
       profileField: "employment_type", fillsProfile: true },
     { q: "How far are you willing to commute?", type: "single", level: "double_a",
       choices: ["Under 30 min", "30 - 60 min", "Over 60 min if needed", "Remote only"],
       profileField: "commute_tolerance", fillsProfile: true },
-    { q: "Would you consider roles that require relocation?", type: "boolean", level: "double_a",
+    { q: "Would you relocate for the right opportunity?", type: "single", level: "double_a",
       choices: ["Yes, anywhere", "Yes, within my country", "Only for the right role", "No, staying put"],
       profileField: "relocation", fillsProfile: true },
-    { q: "What size company do you prefer?", type: "multi", level: "double_a",
-      choices: ["Startup (< 50)", "Mid-size (50 - 500)", "Large enterprise (500+)", "No preference"],
+    { q: "What size company appeals to you?", type: "multi", level: "double_a",
+      choices: ["Startup (< 50)", "Small business (50 - 200)", "Mid-size (200 - 1000)", "Large enterprise (1000+)", "No preference"],
       profileField: "company_size", fillsProfile: true },
 
-    // ── TRIPLE-A: Deep preferences & deal-breakers ─────────────────────────
-    { q: "What industries interest you most?", type: "multi", level: "triple_a",
-      choices: ["Financial Services / Banking", "Tech / SaaS", "Government / Public Sector", "Healthcare / Pharma", "Consulting", "Energy / Utilities", "Retail / E-commerce", "Telecommunications"],
+    // ── TRIPLE-A: Industry, priorities & deal-breakers ──────────────────────
+    { q: "What industries interest you?", type: "multi", level: "triple_a",
+      choices: ["Tech / SaaS", "Financial Services", "Government / Public Sector", "Healthcare", "Consulting", "Energy / Utilities", "Retail / E-commerce", "Manufacturing", "Education", "Non-profit"],
       profileField: "industry_preference", fillsProfile: true },
     { q: "What matters most in your next role?", type: "multi", level: "triple_a",
-      choices: ["Compensation & benefits", "Growth & title advancement", "Mission & impact", "Work-life balance", "Team culture", "Technical challenge"],
+      choices: ["Compensation & benefits", "Career growth", "Mission & impact", "Work-life balance", "Team & culture", "Learning & development", "Job stability", "Flexibility"],
       profileField: "top_priority", fillsProfile: true },
     { q: "What are your deal-breakers?", type: "multi", level: "triple_a",
-      choices: ["Micromanagement", "No remote option", "Below-market pay", "Toxic culture", "No growth path", "Excessive travel", "On-call requirements", "Outdated tech stack"],
+      choices: ["Micromanagement", "No remote option", "Below-market pay", "Toxic culture", "No growth path", "Excessive travel", "On-call / after-hours", "Outdated tech stack", "Long hiring process"],
       profileField: "deal_breakers", fillsProfile: true },
 
-    // ── THE MAJORS: Fine-tuning & personality ──────────────────────────────
-    { q: "What's your ideal work environment?", type: "single", level: "the_show",
-      choices: ["Remote-first startup", "Hybrid corporate", "Small team, big impact", "Enterprise with clear structure"],
+    // ── THE MAJORS: Fine-tuning your profile ────────────────────────────────
+    { q: "What kind of team environment do you thrive in?", type: "single", level: "the_show",
+      choices: ["Small, scrappy team", "Collaborative mid-size team", "Large structured organization", "Independent / solo contributor"],
       profileField: "ideal_culture" },
-    { q: "What motivates you most?", type: "multi", level: "the_show",
-      choices: ["Solving hard problems", "Building teams", "Making an impact", "Learning new tech", "Mentoring others", "Revenue growth"],
+    { q: "What drives you at work?", type: "multi", level: "the_show",
+      choices: ["Solving hard problems", "Building things", "Helping people", "Learning new skills", "Leading & mentoring", "Creative expression", "Financial reward", "Making an impact"],
       profileField: "values" },
     { q: "What are your biggest strengths?", type: "multi", level: "the_show",
-      choices: ["Technical depth", "Strategic thinking", "People leadership", "Cross-functional communication", "Crisis management", "Vendor management", "Board-level presenting"],
+      choices: ["Technical expertise", "Problem solving", "Communication", "Teamwork", "Leadership", "Attention to detail", "Adaptability", "Project management", "Creativity", "Data analysis"],
       profileField: "strengths" },
-    { q: "How do you prefer to grow?", type: "multi", level: "the_show",
-      choices: ["Hands-on projects", "Mentorship", "Formal training", "Stretch assignments", "Conference speaking", "Side projects"],
+    { q: "How do you prefer to grow professionally?", type: "multi", level: "the_show",
+      choices: ["Hands-on projects", "Mentorship", "Formal training / certifications", "Stretch assignments", "Conferences & networking", "Side projects / open source"],
       profileField: "growth_areas" },
-    { q: "Do you have an active security clearance?", type: "boolean", level: "the_show",
+    { q: "Do you have or need a security clearance?", type: "single", level: "the_show",
+      choices: ["Yes, I have an active clearance", "No, but open to obtaining one", "No, and not interested", "Not applicable to my field"],
       profileField: "security_clearance" },
-    { q: "Are you willing to travel for work?", type: "single", level: "the_show",
-      choices: ["No travel", "Up to 10%", "Up to 25%", "Up to 50%", "Willing to travel extensively"],
+    { q: "How much travel works for you?", type: "single", level: "the_show",
+      choices: ["No travel", "Occasional (up to 10%)", "Some (up to 25%)", "Frequent (up to 50%)", "Extensive (50%+)"],
       profileField: "travel_willingness" },
-    { q: "Anything else a recruiter should know?", type: "text", level: "the_show",
-      profileField: "additional_notes", placeholder: "E.g., visa requirements, notice period, preferred start date, specific companies you're targeting..." },
+    { q: "Anything else we should know?", type: "text", level: "the_show",
+      profileField: "additional_notes", placeholder: "E.g., visa requirements, notice period, target companies, certifications in progress, schedule constraints..." },
 ];
 
 let _reporterQuestionIndex = 0;

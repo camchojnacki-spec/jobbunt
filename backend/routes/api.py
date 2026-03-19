@@ -300,7 +300,7 @@ EXTRACTION STRATEGY — follow these steps carefully:
 1. **name**: Look at the VERY FIRST LINE of the document — resumes almost always start with the candidate's name in large/bold text. If the first line looks like a name (1-4 words, capitalized), use it. Also check for "Name:" labels.
 2. **email**: Search the entire document for an email pattern (word@domain.tld). Often near the top, in a header/contact section.
 3. **phone**: Search for phone number patterns anywhere in the document. Formats: (555) 123-4567, 555-123-4567, +1 555 123 4567, etc.
-4. **location**: Look for city/state patterns near the top of the document. Common formats: "City, ST", "City, State", "City, Province", "City, ST ZIP". Also check for "Location:", "Address:" labels. Extract just "City, ST" or "City, Province" format.
+4. **location**: Look for city/state patterns near the top of the document SEPARATE from the name. Common formats: "City, ST", "City, State", "City, Province", "City, ST ZIP". Also check for "Location:", "Address:" labels. Extract ONLY the geographic location like "City, ST" or "City, Province" — do NOT include the person's name in this field.
 5. **target_roles**: Extract from RECENT job titles (last 2-3 positions). These must be real, searchable job titles (e.g. "Director, Information Security" NOT "Director-level security roles"). Include title variations (e.g. both "CISO" and "Chief Information Security Officer"). Generate GRANULAR individual titles from compound roles — e.g. "Director, IT Operations & Cybersecurity" should produce BOTH "Director, IT Operations" AND "Director, Cybersecurity". Also check for any "Objective" or "Target" section. Max 12 titles.
 6. **target_locations**: Extract specific geographic locations. Include variations like "Toronto, ON" and "GTA". If remote is mentioned, include "Remote". Check address, summary, and preferences sections.
 7. **skills**: Extract from BOTH a dedicated "Skills" section AND from bullet points in job descriptions. Use MARKET-STANDARD skill terms that appear in job postings. GOOD: "Risk Management", "Python", "AWS", "ISO 27001". BAD: "building security programs" (too vague), "team player" (cliché). Each skill 1-4 words. Max 20 skills. Include frameworks, certifications, tools, methodologies.
@@ -337,8 +337,8 @@ Return ONLY valid JSON with confidence scores (0.0-1.0) per field:
 }}
 
 DOCUMENT:
-{text[:6000]}"""
-        parsed = await ai_generate_json(prompt, max_tokens=1500, model_tier="fast")
+{text[:10000]}"""
+        parsed = await ai_generate_json(prompt, max_tokens=2000, model_tier="balanced")
         if parsed:
             parsed = _sanitize_parsed_fields(parsed)
             # Fallback: fill gaps with regex extraction
