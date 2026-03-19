@@ -1108,6 +1108,7 @@ function clearFilters() {
     state.filters.salaryMin = '';
     state.filters.keyword = '';
     state.filters.datePosted = 'all';
+    state.browsePage = 1;
     renderBrowseView();
 }
 
@@ -1115,6 +1116,7 @@ let _filterDebounceTimer = null;
 let _filterFocusField = null;
 function updateFilter(key, value) {
     state.filters[key] = value;
+    state.browsePage = 1; // Reset to page 1 on filter change
     _filterFocusField = key === 'keyword' ? 'keyword' : (key === 'salaryMin' ? 'salary' : null);
     if (key === 'keyword') {
         clearTimeout(_filterDebounceTimer);
@@ -1245,8 +1247,16 @@ function renderBrowseView() {
 
     empty.style.display = 'none';
     toolbar.style.display = 'flex';
-    countEl.textContent = `${jobs.length} of ${allJobs.length} jobs`;
     renderFilterBar(allJobs.length, jobs.length);
+
+    // Pagination
+    const PAGE_SIZE = 50;
+    if (!state.browsePage) state.browsePage = 1;
+    const totalPages = Math.ceil(jobs.length / PAGE_SIZE);
+    if (state.browsePage > totalPages) state.browsePage = totalPages || 1;
+    const startIdx = (state.browsePage - 1) * PAGE_SIZE;
+    const pageJobs = jobs.slice(startIdx, startIdx + PAGE_SIZE);
+    countEl.textContent = `${startIdx + 1}-${startIdx + pageJobs.length} of ${jobs.length} jobs`;
 
     if (jobs.length === 0) {
         listView.style.display = 'none';
@@ -1267,13 +1277,15 @@ function renderBrowseView() {
         gridView.style.display = 'none';
         feed.style.display = 'none';
         actionBar.style.display = 'none';
-        renderJobList(jobs);
+        renderJobList(pageJobs);
+        _renderPagination(listView, state.browsePage, totalPages);
     } else if (state.browseMode === 'grid') {
         listView.style.display = 'none';
         gridView.style.display = 'block';
         feed.style.display = 'none';
         actionBar.style.display = 'none';
-        renderJobGrid(jobs);
+        renderJobGrid(pageJobs);
+        _renderPagination(gridView, state.browsePage, totalPages);
     } else {
         // Card mode — existing single-card swipe view
         listView.style.display = 'none';
@@ -1308,6 +1320,34 @@ function renderCurrentCard() {
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+function _renderPagination(container, currentPage, totalPages) {
+    if (totalPages <= 1) return;
+    let existing = container.querySelector('.pagination-bar');
+    if (existing) existing.remove();
+    const bar = document.createElement('div');
+    bar.className = 'pagination-bar';
+    let html = '';
+    html += `<button class="page-btn${currentPage <= 1 ? ' disabled' : ''}" onclick="browsePage(${currentPage - 1})" ${currentPage <= 1 ? 'disabled' : ''}>← Prev</button>`;
+    // Show page numbers with ellipsis
+    for (let p = 1; p <= totalPages; p++) {
+        if (p === 1 || p === totalPages || (p >= currentPage - 2 && p <= currentPage + 2)) {
+            html += `<button class="page-btn${p === currentPage ? ' active' : ''}" onclick="browsePage(${p})">${p}</button>`;
+        } else if (p === currentPage - 3 || p === currentPage + 3) {
+            html += `<span class="page-ellipsis">…</span>`;
+        }
+    }
+    html += `<button class="page-btn${currentPage >= totalPages ? ' disabled' : ''}" onclick="browsePage(${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''}>Next →</button>`;
+    bar.innerHTML = html;
+    container.appendChild(bar);
+}
+
+function browsePage(page) {
+    state.browsePage = page;
+    renderBrowseView();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+window.browsePage = browsePage;
 
 function renderJobList(jobs) {
     const list = document.getElementById('job-list');
