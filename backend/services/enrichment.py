@@ -648,7 +648,7 @@ IMPORTANT:
 - Be specific about strengths - not generic qualities but actual differentiators
 - The ideal_culture should reflect what someone at their level and in their field would value"""
 
-    data = await ai_generate_json(prompt, max_tokens=1000, model_tier="balanced")
+    data = await ai_generate_json(prompt, max_tokens=1000, model_tier="deep")
     if not data:
         return profile
 
@@ -657,16 +657,27 @@ IMPORTANT:
             return ""
         return str(val).strip()
 
-    profile.profile_summary = clean(data.get("profile_summary"))
-    profile.career_trajectory = clean(data.get("career_trajectory"))
-    profile.leadership_style = clean(data.get("leadership_style"))
-    profile.industry_preferences = json.dumps(data.get("industry_preferences", []))
-    profile.values = json.dumps(data.get("values", []))
-    profile.deal_breakers = json.dumps(data.get("deal_breakers", []))
-    profile.strengths = json.dumps(data.get("strengths", []))
-    profile.growth_areas = json.dumps(data.get("growth_areas", []))
-    profile.ideal_culture = clean(data.get("ideal_culture"))
-    if data.get("seniority_level"):
+    # Only fill fields that are still None/empty — do not overwrite values
+    # already populated by the resume parse pipeline
+    if not profile.profile_summary:
+        profile.profile_summary = clean(data.get("profile_summary"))
+    if not profile.career_trajectory:
+        profile.career_trajectory = clean(data.get("career_trajectory"))
+    if not profile.leadership_style:
+        profile.leadership_style = clean(data.get("leadership_style"))
+    if not profile.industry_preferences or profile.industry_preferences in ("[]", "null", ""):
+        profile.industry_preferences = json.dumps(data.get("industry_preferences", []))
+    if not profile.values or profile.values in ("[]", "null", ""):
+        profile.values = json.dumps(data.get("values", []))
+    if not profile.deal_breakers or profile.deal_breakers in ("[]", "null", ""):
+        profile.deal_breakers = json.dumps(data.get("deal_breakers", []))
+    if not profile.strengths or profile.strengths in ("[]", "null", ""):
+        profile.strengths = json.dumps(data.get("strengths", []))
+    if not profile.growth_areas or profile.growth_areas in ("[]", "null", ""):
+        profile.growth_areas = json.dumps(data.get("growth_areas", []))
+    if not profile.ideal_culture:
+        profile.ideal_culture = clean(data.get("ideal_culture"))
+    if not profile.seniority_level and data.get("seniority_level"):
         profile.seniority_level = clean(data.get("seniority_level"))
     profile.profile_analyzed = True
 
