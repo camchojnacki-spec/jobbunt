@@ -150,6 +150,9 @@ class ProfileUpdate(BaseModel):
     values: Optional[str] = None
     strengths: Optional[str] = None
     growth_areas: Optional[str] = None
+    career_history: Optional[str] = None
+    profile_summary: Optional[str] = None
+    career_trajectory: Optional[str] = None
 
 class ProfilePasteInput(BaseModel):
     text: str
@@ -273,6 +276,7 @@ def update_profile(profile_id: int, data: ProfileUpdate, db: Session = Depends(g
         'relocation', 'company_size', 'industry_preference', 'top_priority',
         'security_clearance', 'travel_willingness', 'additional_notes',
         'deal_breakers', 'ideal_culture', 'values', 'strengths', 'growth_areas',
+        'career_history', 'profile_summary', 'career_trajectory',
     ]
     for f in simple_fields:
         val = getattr(data, f, None)
@@ -288,19 +292,26 @@ def update_profile(profile_id: int, data: ProfileUpdate, db: Session = Depends(g
 
 @router.post("/profiles/parse")
 async def parse_profile_text(data: ProfilePasteInput):
-    """Parse a pasted profile document into structured profile fields."""
+    """Parse a pasted profile document into structured profile fields.
+
+    Uses a two-stage AI pipeline:
+      Stage 1 — Factual extraction of contact info, skills, career history
+      Stage 2 — Smart inference of target roles, summary, trajectory from Stage 1
+    """
     text = data.text.strip()
     if not text:
         raise HTTPException(400, "No text provided")
 
     if get_provider() != "none":
-        prompt = f"""You are a career data extraction expert. Parse this candidate profile/resume into structured JSON.
+        # ── Stage 1: Factual Extraction ──────────────────────────────────
+        stage1_prompt = f"""You are a career data extraction expert. Parse this candidate profile/resume into structured JSON.
 
 EXTRACTION STRATEGY — follow these steps carefully:
 1. **name**: Look at the VERY FIRST LINE of the document — resumes almost always start with the candidate's name in large/bold text. If the first line looks like a name (1-4 words, capitalized), use it. Also check for "Name:" labels.
 2. **email**: Search the entire document for an email pattern (word@domain.tld). Often near the top, in a header/contact section.
 3. **phone**: Search for phone number patterns anywhere in the document. Formats: (555) 123-4567, 555-123-4567, +1 555 123 4567, etc.
 4. **location**: Look for city/state patterns near the top of the document SEPARATE from the name. Common formats: "City, ST", "City, State", "City, Province", "City, ST ZIP". Also check for "Location:", "Address:" labels. Extract ONLY the geographic location like "City, ST" or "City, Province" — do NOT include the person's name in this field.
+   BAD: "Cameron Chojnacki Milton, ON" — this includes the name. GOOD: "Milton, ON"
 5. **target_roles**: Extract from RECENT job titles (last 2-3 positions). These must be real, searchable job titles (e.g. "Director, Information Security" NOT "Director-level security roles"). Include title variations (e.g. both "CISO" and "Chief Information Security Officer"). Generate GRANULAR individual titles from compound roles — e.g. "Director, IT Operations & Cybersecurity" should produce BOTH "Director, IT Operations" AND "Director, Cybersecurity". Also check for any "Objective" or "Target" section. Max 12 titles.
 6. **target_locations**: Extract specific geographic locations. Include variations like "Toronto, ON" and "GTA". If remote is mentioned, include "Remote". Check address, summary, and preferences sections.
 7. **skills**: Extract from BOTH a dedicated "Skills" section AND from bullet points in job descriptions. Use MARKET-STANDARD skill terms that appear in job postings. GOOD: "Risk Management", "Python", "AWS", "ISO 27001". BAD: "building security programs" (too vague), "team player" (cliché). Each skill 1-4 words. Max 20 skills. Include frameworks, certifications, tools, methodologies.
@@ -309,6 +320,7 @@ EXTRACTION STRATEGY — follow these steps carefully:
 10. **min_salary / max_salary**: Extract as integers if mentioned. If only one number, use it for both.
 11. **remote_preference**: Must be exactly one of: remote, hybrid, onsite, any
 12. **cover_letter_template**: Extract any instructions about tone, style, or approach for cover letters.
+13. **career_history**: Extract ALL work experience entries as a list. For each position extract company name, job title, start date, end date (or "Present"), and a brief description of responsibilities/achievements.
 
 CRITICAL: If you truly cannot find a field, set its value to null — do NOT use strings like "Not found", "Unknown", or "N/A".
 
@@ -333,15 +345,99 @@ Return ONLY valid JSON with confidence scores (0.0-1.0) per field:
     "skills": ["Python", "AWS", "Kubernetes", "System Design"],
     "skills_confidence": 0.85,
     "seniority_level": "senior",
-    "cover_letter_template": null
+    "cover_letter_template": null,
+    "career_history": [
+        {{"company": "Acme Corp", "title": "Senior Engineer", "start_date": "2020-01", "end_date": "Present", "description": "Led platform team..."}},
+        {{"company": "Beta Inc", "title": "Software Engineer", "start_date": "2017-06", "end_date": "2020-01", "description": "Built microservices..."}}
+    ],
+    "career_history_confidence": 0.9
 }}
 
 DOCUMENT:
-{text[:10000]}"""
-        parsed = await ai_generate_json(prompt, max_tokens=2000, model_tier="balanced")
-        if parsed:
-            parsed = _sanitize_parsed_fields(parsed)
+{text[:15000]}"""
+
+        stage1 = await ai_generate_json(stage1_prompt, max_tokens=4000, model_tier="deep")
+
+        if stage1:
+            stage1 = _sanitize_parsed_fields(stage1)
+
+            # ── Stage 2: Smart Inference ─────────────────────────────────
+            stage1_json_str = json.dumps(stage1, indent=2, default=str)
+            stage2_prompt = f"""You are a career analyst. Given the factual data extracted from a resume (Stage 1 output below), perform smart inference to fill in higher-level insights.
+
+STAGE 1 EXTRACTED DATA:
+{stage1_json_str}
+
+Based on this data, return JSON with the following inferred fields:
+
+1. **target_roles**: Look at the last 2-3 job titles in career_history. Generate searchable title variations that a recruiter would use. For example if the last title was "Director, IT Operations & Cybersecurity", generate ["Director, IT Operations", "Director, Cybersecurity", "Director of IT", "IT Operations Director", "Cybersecurity Director"]. Max 12 titles.
+2. **skills**: Review the job descriptions in career_history and merge any additional market-standard skills with the Stage 1 skills list. Deduplicate. Max 25 skills total.
+3. **experience_years**: Calculate from the earliest career_history start_date to present (today is {datetime.now().strftime('%Y-%m')}). Return an integer.
+4. **seniority_level**: Infer from the most recent job title. Must be exactly one of: entry, mid, senior, director, vp, c-suite
+5. **profile_summary**: Write a 3-4 sentence executive summary of who this candidate is, what they bring, and what they are looking for. Write in third person.
+6. **career_trajectory**: Write a 2-3 sentence narrative of their career arc — where they have been and where they are heading.
+7. **industry_preferences**: Infer a list of industries/sectors they would thrive in based on the companies they have worked at and their skills.
+
+Return ONLY valid JSON:
+{{
+    "target_roles": ["Title 1", "Title 2"],
+    "skills": ["Skill 1", "Skill 2"],
+    "experience_years": 15,
+    "seniority_level": "director",
+    "profile_summary": "...",
+    "career_trajectory": "...",
+    "industry_preferences": ["Technology", "Finance"]
+}}"""
+
+            stage2 = await ai_generate_json(stage2_prompt, max_tokens=2000, model_tier="deep")
+
+            # ── Merge Stage 1 + Stage 2 ──────────────────────────────────
+            inferred_fields = []
+
+            if stage2:
+                # experience_years: Stage 2 wins (date math is more reliable)
+                if stage2.get("experience_years") is not None:
+                    stage1["experience_years"] = stage2["experience_years"]
+                    inferred_fields.append("experience_years")
+
+                # target_roles: Stage 2 wins only if Stage 1 was empty/null
+                if not stage1.get("target_roles") and stage2.get("target_roles"):
+                    stage1["target_roles"] = stage2["target_roles"]
+                    inferred_fields.append("target_roles")
+
+                # seniority_level: Stage 2 wins only if Stage 1 was empty/null
+                if not stage1.get("seniority_level") and stage2.get("seniority_level"):
+                    stage1["seniority_level"] = stage2["seniority_level"]
+                    inferred_fields.append("seniority_level")
+
+                # skills: merge Stage 1 + Stage 2, deduplicate (case-insensitive)
+                s1_skills = stage1.get("skills") or []
+                s2_skills = stage2.get("skills") or []
+                seen_lower = set()
+                merged_skills = []
+                for skill in s1_skills + s2_skills:
+                    if isinstance(skill, str) and skill.strip().lower() not in seen_lower:
+                        seen_lower.add(skill.strip().lower())
+                        merged_skills.append(skill.strip())
+                stage1["skills"] = merged_skills[:25]
+                if s2_skills:
+                    inferred_fields.append("skills")
+
+                # Inferred-only fields: Stage 2 always wins
+                if stage2.get("profile_summary"):
+                    stage1["profile_summary"] = stage2["profile_summary"]
+                    inferred_fields.append("profile_summary")
+                if stage2.get("career_trajectory"):
+                    stage1["career_trajectory"] = stage2["career_trajectory"]
+                    inferred_fields.append("career_trajectory")
+                if stage2.get("industry_preferences"):
+                    stage1["industry_preferences"] = stage2["industry_preferences"]
+                    inferred_fields.append("industry_preferences")
+
+            stage1["inferred_fields"] = inferred_fields
+
             # Fallback: fill gaps with regex extraction
+            parsed = stage1
             regex_parsed = _regex_parse_profile(text)
             for key in ["name", "email", "phone", "location"]:
                 if not parsed.get(key) and regex_parsed.get(key):
@@ -367,7 +463,8 @@ def _sanitize_parsed_fields(parsed: dict) -> dict:
     Convert them to null so the frontend knows no real value was extracted."""
     _empty_values = {"not found", "unknown", "n/a", "none", "null", ""}
     string_fields = ["name", "email", "phone", "location", "remote_preference",
-                     "cover_letter_template", "seniority_level"]
+                     "cover_letter_template", "seniority_level",
+                     "profile_summary", "career_trajectory"]
     for key in string_fields:
         val = parsed.get(key)
         if isinstance(val, str) and val.strip().lower() in _empty_values:
@@ -377,6 +474,15 @@ def _sanitize_parsed_fields(parsed: dict) -> dict:
         val = parsed.get(key)
         if isinstance(val, list):
             parsed[key] = [v for v in val if isinstance(v, str) and v.strip().lower() not in _empty_values]
+
+    # Fix location: if it starts with the extracted name, strip the name out
+    name = parsed.get("name")
+    location = parsed.get("location")
+    if name and location and isinstance(name, str) and isinstance(location, str):
+        if location.strip().lower().startswith(name.strip().lower()):
+            cleaned = location[len(name):].strip().lstrip(",").strip()
+            parsed["location"] = cleaned if cleaned else None
+
     return parsed
 
 

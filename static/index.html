@@ -693,11 +693,10 @@
                                 Scan &amp; Build Profile
                             </button>
                         </div>
-                        <div id="parsed-preview" style="display:none; margin-top:12px">
-                            <h4 style="margin-bottom:8px; color:var(--text-bright); font-size:13px">We found this in your resume:</h4>
-                            <div id="parsed-preview-content" style="background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; font-size:13px; line-height:1.6"></div>
-                            <div class="btn-group" style="margin-top:10px">
-                                <button class="btn btn-success btn-sm" id="btn-confirm-parsed" onclick="confirmParsedProfile()">Looks Good — Save It</button>
+                        <div id="parsed-preview" style="display:none; margin-top:16px">
+                            <div id="parsed-preview-content"></div>
+                            <div style="text-align:center; margin-top:16px">
+                                <button class="btn btn-success" id="btn-confirm-parsed" onclick="confirmParsedProfile()" style="min-width:200px;font-size:14px;padding:10px 24px">SAVE PROFILE</button>
                             </div>
                         </div>
                     </div>
@@ -1128,6 +1127,6 @@
         <div class="toast-container" id="toast-container"></div>
     </div>
 
-    <script src="/static/js/app.js?v=20260318r"></script>
+    <script src="/static/js/app.js?v=20260318s"></script>
 </body>
 </html>

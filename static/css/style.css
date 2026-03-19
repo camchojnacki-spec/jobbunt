@@ -6198,3 +6198,208 @@ select:focus {
 @keyframes spinner-inline-spin {
     to { transform: rotate(360deg); }
 }
+
+/* ── Parse Results Dashboard ─────────────────────────────────────────── */
+.parse-results-card {
+    background: var(--jb-bg-secondary);
+    border: 1px solid var(--jb-border-hover);
+    border-radius: var(--jb-r-md);
+    padding: 18px 20px;
+    margin-bottom: 14px;
+}
+.parse-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--jb-text-1);
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--jb-border);
+}
+.parse-card-title svg {
+    color: var(--jb-bright);
+    flex-shrink: 0;
+}
+
+/* Contact grid */
+.parse-contact-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.parse-contact-field {
+    min-width: 0;
+}
+.parse-contact-label {
+    font-size: 11px;
+    color: var(--jb-text-3);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Editable fields */
+.parse-editable {
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: var(--jb-r-sm);
+    border: 1px solid transparent;
+    transition: border-color 0.2s, background 0.2s;
+    font-size: 13px;
+    color: var(--jb-text-1);
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+}
+.parse-editable:hover {
+    border-color: var(--jb-border-hover);
+    background: var(--jb-bg-tertiary);
+}
+.parse-editable-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.parse-editable-input {
+    width: 100%;
+    background: var(--jb-bg-deep);
+    border: 1px solid var(--jb-bright);
+    border-radius: var(--jb-r-sm);
+    color: var(--jb-text-1);
+    font-family: var(--jb-font);
+    font-size: 13px;
+    padding: 4px 6px;
+    outline: none;
+}
+
+/* Career timeline */
+.career-timeline {
+    border-left: 2px solid var(--jb-border-hover);
+    margin-left: 8px;
+    padding-left: 18px;
+}
+.career-entry {
+    position: relative;
+    padding-bottom: 16px;
+    margin-bottom: 4px;
+}
+.career-entry:last-child {
+    padding-bottom: 0;
+    margin-bottom: 0;
+}
+.career-entry::before {
+    content: '';
+    position: absolute;
+    left: -23px;
+    top: 5px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--jb-bright);
+    border: 2px solid var(--jb-bg-secondary);
+}
+.career-entry-company {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--jb-text-1);
+}
+.career-entry-title {
+    font-size: 12px;
+    color: var(--jb-text-2);
+    margin-top: 2px;
+}
+.career-entry-dates {
+    font-size: 11px;
+    color: var(--jb-text-3);
+    margin-top: 2px;
+}
+.career-entry-desc {
+    font-size: 12px;
+    color: var(--jb-text-2);
+    margin-top: 4px;
+    line-height: 1.4;
+    opacity: 0.85;
+}
+
+/* Experience badge */
+.experience-badge {
+    display: inline-block;
+    background: var(--jb-info-s, rgba(74,144,217,.1));
+    color: var(--jb-bright);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 20px;
+    margin-bottom: 14px;
+}
+
+/* Insight pills */
+.insight-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+.insight-pill {
+    display: inline-block;
+    background: var(--jb-bg-tertiary);
+    color: var(--jb-text-1);
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 14px;
+    border: 1px solid var(--jb-border-hover);
+    white-space: nowrap;
+}
+.insight-pill.inferred {
+    background: rgba(74,144,217,.08);
+    border-color: rgba(74,144,217,.2);
+    color: var(--jb-bright-light);
+}
+.insight-pill.seniority {
+    background: var(--jb-warning-s);
+    border-color: rgba(229,160,48,.25);
+    color: var(--jb-warning);
+    font-weight: 600;
+}
+
+/* Insight sections */
+.insight-section {
+    margin-bottom: 14px;
+}
+.insight-section:last-child {
+    margin-bottom: 0;
+}
+.insight-section-label {
+    font-size: 11px;
+    color: var(--jb-text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+.insight-summary-box {
+    background: var(--jb-bg-tertiary);
+    border-radius: var(--jb-r-sm);
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--jb-text-2);
+    line-height: 1.5;
+    border: 1px solid var(--jb-border);
+}
+
+/* Inferred label */
+.inferred-label {
+    font-size: 10px;
+    color: var(--jb-bright-light);
+    font-weight: 400;
+    margin-left: 4px;
+    white-space: nowrap;
+}
+
+/* Empty message */
+.parse-empty-msg {
+    font-size: 13px;
+    color: var(--jb-text-3);
+    font-style: italic;
+}

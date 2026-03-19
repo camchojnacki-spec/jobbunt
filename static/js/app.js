@@ -318,57 +318,127 @@ async function parseAndSaveProfile() {
         const preview = document.getElementById('parsed-preview');
         const content = document.getElementById('parsed-preview-content');
 
-        // Build comparison view: current profile vs AI-parsed values with checkboxes
-        const currentProf = state.profile || {};
-        const compFields = [
-            { key: 'name', label: 'Name', type: 'string' },
-            { key: 'email', label: 'Email', type: 'string' },
-            { key: 'phone', label: 'Phone', type: 'string' },
-            { key: 'location', label: 'Location', type: 'string' },
-            { key: 'target_roles', label: 'Target Roles', type: 'list' },
-            { key: 'skills', label: 'Skills', type: 'list' },
-            { key: 'target_locations', label: 'Target Locations', type: 'list' },
-            { key: 'experience_years', label: 'Experience', type: 'number', suffix: ' years' },
-            { key: 'seniority_level', label: 'Seniority', type: 'string' },
-            { key: 'remote_preference', label: 'Remote Pref', type: 'string' },
-            { key: 'min_salary', label: 'Min Salary', type: 'number' },
-            { key: 'max_salary', label: 'Max Salary', type: 'number' },
-        ];
+        // Build card-based results dashboard
         function _isEmptyParsed(v) {
             if (v === null || v === undefined) return true;
             if (typeof v === 'string') { const l = v.trim().toLowerCase(); return !l || ['not found','unknown','n/a','none','null'].includes(l); }
             if (Array.isArray(v)) return v.length === 0;
             return false;
         }
-        function _dispVal(v, type, suffix) {
-            if (_isEmptyParsed(v)) return '<span style="color:var(--jb-text-dim);font-style:italic">empty</span>';
-            if (type === 'list') return v.map(s => `<span class="reason-tag">${esc(s)}</span>`).join(' ');
-            return esc(String(v)) + (suffix || '');
-        }
-        function _confBadge(score) {
-            if (score === undefined || score === null) return '';
-            const pct = Math.round(score * 100);
-            const clr = pct >= 80 ? '#4caf50' : pct >= 50 ? '#ff9800' : '#f44336';
-            return ` <span style="font-size:10px;color:${clr}" title="AI confidence">${pct}%</span>`;
-        }
-        let compRows = '';
-        for (const f of compFields) {
-            const aiVal = parsed[f.key], curVal = currentProf[f.key];
-            const aiEmpty = _isEmptyParsed(aiVal);
-            const hasChange = !aiEmpty && (JSON.stringify(aiVal) !== JSON.stringify(curVal));
-            const checked = hasChange && !aiEmpty;
-            const conf = parsed[f.key + '_confidence'];
-            compRows += `<div style="display:grid;grid-template-columns:24px 1fr 1fr auto;gap:6px;align-items:start;padding:5px 0;border-bottom:1px solid var(--border,#333)">
-                <label style="display:flex;align-items:center;padding-top:12px"><input type="checkbox" class="parse-field-check" data-field="${f.key}" ${checked ? 'checked' : ''} ${aiEmpty ? 'disabled' : ''}></label>
-                <div><div style="font-size:10px;color:var(--jb-text-dim)">Current ${esc(f.label)}</div><div style="font-size:12px">${_dispVal(curVal, f.type, f.suffix)}</div></div>
-                <div><div style="font-size:10px;color:var(--accent-light)">AI found${_confBadge(conf)}</div><div style="font-size:12px">${_dispVal(aiVal, f.type, f.suffix)}</div></div>
-                <div style="font-size:10px;color:var(--jb-text-dim);padding-top:12px">${aiEmpty ? 'no data' : hasChange ? 'changed' : 'same'}</div>
+        const inferredSet = new Set((parsed.inferred_fields || []).map(f => f.toLowerCase()));
+
+        // --- Card 1: Contact Info ---
+        const contactFields = [
+            { key: 'name', label: 'Name', icon: '👤' },
+            { key: 'email', label: 'Email', icon: '✉' },
+            { key: 'phone', label: 'Phone', icon: '📞' },
+            { key: 'location', label: 'Location', icon: '📍' },
+        ];
+        let contactGrid = '<div class="parse-contact-grid">';
+        for (const f of contactFields) {
+            const val = _isEmptyParsed(parsed[f.key]) ? '' : String(parsed[f.key]);
+            const display = val || '\u2014';
+            contactGrid += `<div class="parse-contact-field">
+                <div class="parse-contact-label">${f.icon} ${esc(f.label)}</div>
+                <div class="parse-editable" data-field="${f.key}" data-editing="false" onclick="window._parseEditField(this)">
+                    <span class="parse-editable-value">${esc(display)}</span>
+                    <input type="text" class="parse-editable-input" value="${esc(val)}" style="display:none" />
+                </div>
             </div>`;
         }
+        contactGrid += '</div>';
+
+        // --- Card 2: Career History ---
+        const careerHistory = parsed.career_history || [];
+        const expYears = parsed.experience_years;
+        let careerContent = '';
+        if (!_isEmptyParsed(expYears)) {
+            careerContent += `<div class="experience-badge">${esc(String(expYears))} years experience</div>`;
+        }
+        if (careerHistory.length > 0) {
+            careerContent += '<div class="career-timeline">';
+            for (const job of careerHistory) {
+                const company = job.company || job.organization || 'Unknown Company';
+                const title = job.title || job.role || '';
+                const startDate = job.start_date || '';
+                const endDate = job.end_date || 'Present';
+                const desc = job.description || job.summary || '';
+                careerContent += `<div class="career-entry">
+                    <div class="career-entry-company">${esc(company)}</div>
+                    ${title ? `<div class="career-entry-title">${esc(title)}</div>` : ''}
+                    <div class="career-entry-dates">${esc(startDate)}${startDate ? ' \u2014 ' : ''}${esc(endDate)}</div>
+                    ${desc ? `<div class="career-entry-desc">${esc(desc)}</div>` : ''}
+                </div>`;
+            }
+            careerContent += '</div>';
+        } else {
+            careerContent += '<p class="parse-empty-msg">No career history extracted</p>';
+        }
+
+        // --- Card 3: AI Insights ---
+        function _renderPills(arr, fieldName) {
+            if (!arr || arr.length === 0) return '<span class="parse-empty-msg">\u2014</span>';
+            const isInferred = inferredSet.has(fieldName);
+            return '<div class="insight-pills">' + arr.map(s =>
+                `<span class="insight-pill${isInferred ? ' inferred' : ''}">${esc(s)}</span>`
+            ).join('') + (isInferred ? '<span class="inferred-label">✨ AI inferred</span>' : '') + '</div>';
+        }
+
+        const targetRoles = parsed.target_roles || [];
+        const skills = parsed.skills || [];
+        const summary = parsed.profile_summary || parsed.summary || '';
+        const seniority = parsed.seniority_level || '';
+        const industryPrefs = parsed.industry_preferences || [];
+
+        let insightsContent = '';
+        // Target Roles
+        insightsContent += `<div class="insight-section">
+            <div class="insight-section-label">Target Roles</div>
+            ${_renderPills(targetRoles, 'target_roles')}
+        </div>`;
+        // Skills
+        insightsContent += `<div class="insight-section">
+            <div class="insight-section-label">Skills</div>
+            ${_renderPills(skills, 'skills')}
+        </div>`;
+        // Profile Summary
+        if (!_isEmptyParsed(summary)) {
+            const summaryInferred = inferredSet.has('profile_summary');
+            insightsContent += `<div class="insight-section">
+                <div class="insight-section-label">Profile Summary${summaryInferred ? ' <span class="inferred-label">✨ AI inferred</span>' : ''}</div>
+                <div class="insight-summary-box">${esc(summary)}</div>
+            </div>`;
+        }
+        // Seniority Level
+        if (!_isEmptyParsed(seniority)) {
+            const seniorityInferred = inferredSet.has('seniority_level');
+            insightsContent += `<div class="insight-section">
+                <div class="insight-section-label">Seniority Level</div>
+                <span class="insight-pill seniority">${esc(seniority)}</span>
+                ${seniorityInferred ? '<span class="inferred-label">✨ AI inferred</span>' : ''}
+            </div>`;
+        }
+        // Industry Preferences
+        if (industryPrefs.length > 0) {
+            insightsContent += `<div class="insight-section">
+                <div class="insight-section-label">Industry Preferences</div>
+                ${_renderPills(industryPrefs, 'industry_preferences')}
+            </div>`;
+        }
+
         content.innerHTML = `
-            <div style="font-size:11px;color:var(--jb-text-dim);margin-bottom:8px">Check the fields you want to update. Unchecked fields keep their current values.</div>
-            <div style="max-height:350px;overflow-y:auto">${compRows}</div>
-            <p style="margin-top:10px;font-size:12px;color:var(--jb-text-dim)">You can fine-tune everything in the form below after saving.</p>
+            <div class="parse-results-card">
+                <div class="parse-card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Contact Info</div>
+                ${contactGrid}
+            </div>
+            <div class="parse-results-card">
+                <div class="parse-card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg> Career History</div>
+                ${careerContent}
+            </div>
+            <div class="parse-results-card">
+                <div class="parse-card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg> AI Insights</div>
+                ${insightsContent}
+            </div>
         `;
 
         preview.style.display = 'block';
@@ -382,15 +452,9 @@ async function parseAndSaveProfile() {
 
 async function confirmParsedProfile() {
     const parsed = state.parsedProfile;
-    if (!parsed) { toast('No parsed profile data — try scanning your resume again', 'warning'); return; }
+    if (!parsed) { toast('No parsed profile data \u2014 try scanning your resume again', 'warning'); return; }
     const btn = document.getElementById('btn-confirm-parsed');
     setButtonLoading(btn, true);
-
-    // Only apply fields the user checked in the comparison view
-    const checkedFields = new Set();
-    document.querySelectorAll('.parse-field-check:checked').forEach(cb => {
-        checkedFields.add(cb.dataset.field);
-    });
 
     // Helper: is value empty/placeholder?
     function _isEmpty(v) {
@@ -400,41 +464,54 @@ async function confirmParsedProfile() {
         return false;
     }
 
-    // Start from existing profile data, only overwrite checked fields with non-empty AI values
-    const existing = state.profile || {};
-    const allFields = {
-        name: { fallback: 'Unknown' },
-        email: { fallback: null },
-        phone: { fallback: null },
-        location: { fallback: null },
-        target_roles: { fallback: [] },
-        target_locations: { fallback: [] },
-        min_salary: { fallback: null },
-        max_salary: { fallback: null },
-        remote_preference: { fallback: 'any' },
-        experience_years: { fallback: null },
-        skills: { fallback: [] },
-        cover_letter_template: { fallback: null },
-    };
+    // Read edited values from inline editors in the contact card
+    const editedContact = {};
+    document.querySelectorAll('.parse-editable').forEach(el => {
+        const field = el.dataset.field;
+        const input = el.querySelector('.parse-editable-input');
+        if (field && input) {
+            editedContact[field] = input.value.trim();
+        }
+    });
 
+    const existing = state.profile || {};
+
+    // Build data: accept everything from parsed, override contact fields with edits
     const data = {};
-    for (const [key, meta] of Object.entries(allFields)) {
-        const aiVal = parsed[key];
-        const curVal = existing[key];
-        if (checkedFields.has(key) && !_isEmpty(aiVal)) {
-            // User accepted the AI value
-            data[key] = aiVal;
-        } else if (curVal !== undefined && curVal !== null) {
-            // Keep existing profile value
-            data[key] = curVal;
-        } else if (!_isEmpty(aiVal)) {
-            // No existing value and AI has something (for new profiles)
-            data[key] = aiVal;
+
+    // Contact fields: prefer edited value, then parsed, then existing
+    for (const key of ['name', 'email', 'phone', 'location']) {
+        if (editedContact[key]) {
+            data[key] = editedContact[key];
+        } else if (!_isEmpty(parsed[key])) {
+            data[key] = parsed[key];
+        } else if (existing[key]) {
+            data[key] = existing[key];
         } else {
-            data[key] = meta.fallback;
+            data[key] = key === 'name' ? 'Unknown' : null;
         }
     }
+
+    // List fields: accept AI values, fall back to existing
+    for (const key of ['target_roles', 'target_locations', 'skills', 'industry_preferences']) {
+        data[key] = !_isEmpty(parsed[key]) ? parsed[key] : (existing[key] || []);
+    }
+
+    // Scalar fields: accept AI values, fall back to existing
+    for (const key of ['min_salary', 'max_salary', 'experience_years']) {
+        data[key] = !_isEmpty(parsed[key]) ? parsed[key] : (existing[key] || null);
+    }
+
+    // String fields
+    data.remote_preference = !_isEmpty(parsed.remote_preference) ? parsed.remote_preference : (existing.remote_preference || 'any');
+    data.seniority_level = !_isEmpty(parsed.seniority_level) ? parsed.seniority_level : (existing.seniority_level || null);
+    data.cover_letter_template = existing.cover_letter_template || null;
     data.raw_profile_doc = parsed.raw_profile_doc || existing.raw_profile_doc || null;
+
+    // New fields from AI parsing
+    data.profile_summary = !_isEmpty(parsed.profile_summary || parsed.summary) ? (parsed.profile_summary || parsed.summary) : (existing.profile_summary || null);
+    data.career_trajectory = !_isEmpty(parsed.career_trajectory) ? parsed.career_trajectory : (existing.career_trajectory || null);
+    data.career_history = (parsed.career_history && parsed.career_history.length > 0) ? parsed.career_history : (existing.career_history || []);
 
     try {
         let profile;
@@ -459,17 +536,45 @@ async function confirmParsedProfile() {
         }
 
         document.getElementById('parsed-preview').style.display = 'none';
-        // Fill the form with the saved profile data
         populateProfileForm(profile);
         updateNavAvatar();
         try { const ps = await api('/profiles'); populateProfileDropdown(ps); } catch(e) { /* ok */ }
-        // Scroll down to the form so user can review
+
+        // Auto-fire deep analysis in background
+        api('/profiles/' + state.profileId + '/analyze', { method: 'POST' }).catch(() => {});
+        toast('Analyzing profile...', 'info');
+
         const step2 = document.querySelector('#profile-form .profile-section');
         if (step2) step2.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
         toast('Failed to save profile: ' + e.message, 'error');
     }
 }
+
+// Inline edit handler for contact info fields
+window._parseEditField = function(el) {
+    if (el.dataset.editing === 'true') return;
+    el.dataset.editing = 'true';
+    const span = el.querySelector('.parse-editable-value');
+    const input = el.querySelector('.parse-editable-input');
+    span.style.display = 'none';
+    input.style.display = 'block';
+    input.focus();
+    input.select();
+
+    function commit() {
+        const val = input.value.trim();
+        span.textContent = val || '\u2014';
+        span.style.display = '';
+        input.style.display = 'none';
+        el.dataset.editing = 'false';
+    }
+    input.addEventListener('blur', commit, { once: true });
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.value = span.textContent === '\u2014' ? '' : span.textContent; input.blur(); }
+    });
+};
 
 window.setProfileMode = setProfileMode;
 window.parseAndSaveProfile = parseAndSaveProfile;
