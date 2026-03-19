@@ -211,7 +211,25 @@ async function loadProfile() {
             } catch(e) { /* profile view not yet active */ }
             showView('dugout');
         } else {
-            // New user — send them straight to Profile to get started
+            // New user — auto-create a profile from auth data, then go to Profile
+            try {
+                const name = state.authUser?.name || 'New User';
+                const email = state.authUser?.email || '';
+                const newProfile = await api('/profiles', {
+                    method: 'POST',
+                    body: { name, email }
+                });
+                state.profile = newProfile;
+                state.profileId = newProfile.id;
+                state.tags.roles = newProfile.target_roles || [];
+                state.tags.locations = newProfile.target_locations || [];
+                state.tags.skills = newProfile.skills || [];
+                updateNavAvatar();
+                populateProfileDropdown([newProfile]);
+                toast('Welcome! Let\u2019s build your profile.', 'info');
+            } catch(e) {
+                console.warn('Auto-create profile failed:', e);
+            }
             showView('profile');
         }
     } catch (e) {
