@@ -6,7 +6,7 @@ import re
 import logging
 import shutil
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
@@ -150,7 +150,8 @@ class ProfileUpdate(BaseModel):
     values: Optional[str] = None
     strengths: Optional[str] = None
     growth_areas: Optional[str] = None
-    career_history: Optional[str] = None
+    industry_preferences: Optional[Any] = None  # accepts list or JSON string
+    career_history: Optional[Any] = None  # accepts list or JSON string
     profile_summary: Optional[str] = None
     career_trajectory: Optional[str] = None
 
@@ -267,7 +268,7 @@ def get_profile(profile_id: int, db: Session = Depends(get_db), user: User = Dep
 def update_profile(profile_id: int, data: ProfileUpdate, db: Session = Depends(get_db), user: User = Depends(get_optional_user)):
     profile = _get_profile_for_user(profile_id, user, db)
     # Only update fields that were explicitly provided (partial update support)
-    json_fields = {'target_roles', 'target_locations', 'skills'}
+    json_fields = {'target_roles', 'target_locations', 'skills', 'career_history', 'industry_preferences'}
     simple_fields = [
         'name', 'email', 'phone', 'location', 'min_salary', 'max_salary',
         'remote_preference', 'experience_years', 'cover_letter_template',
@@ -276,7 +277,7 @@ def update_profile(profile_id: int, data: ProfileUpdate, db: Session = Depends(g
         'relocation', 'company_size', 'industry_preference', 'top_priority',
         'security_clearance', 'travel_willingness', 'additional_notes',
         'deal_breakers', 'ideal_culture', 'values', 'strengths', 'growth_areas',
-        'career_history', 'profile_summary', 'career_trajectory',
+        'profile_summary', 'career_trajectory',
     ]
     for f in simple_fields:
         val = getattr(data, f, None)
