@@ -239,23 +239,10 @@ async function loadProfile() {
 
 function setProfileMode(mode) {
     state.profileMode = mode;
-    const pasteMode = document.getElementById('profile-paste-mode');
     const manualMode = document.getElementById('profile-form');
-    const btnPaste = document.getElementById('btn-mode-paste');
-    const btnManual = document.getElementById('btn-mode-manual');
-
-    if (mode === 'paste') {
-        if (pasteMode) pasteMode.style.display = 'block';
-        if (manualMode) manualMode.style.display = 'none';
-        if (btnPaste) btnPaste.className = 'btn btn-primary';
-        if (btnManual) btnManual.className = 'btn btn-secondary';
-    } else {
-        if (pasteMode) pasteMode.style.display = 'none';
-        if (manualMode) manualMode.style.display = 'block';
-        if (btnPaste) btnPaste.className = 'btn btn-secondary';
-        if (btnManual) btnManual.className = 'btn btn-primary';
-        if (state.profile) populateProfileForm(state.profile);
-    }
+    // Always show the profile form — both modes need it visible
+    if (manualMode) manualMode.style.display = 'block';
+    if (state.profile) populateProfileForm(state.profile);
 }
 
 function handleResumeSelected(input) {
@@ -5905,8 +5892,7 @@ async function saveReporterAnswer() {
     // Used for free-text questions only
     const taEl = document.getElementById('reporter-textarea');
     const answer = taEl ? taEl.value.trim() : '';
-    if (!answer) { toast('Type your answer first', 'warning'); return; }
-    await _saveReporterValue(answer);
+    await _saveReporterValue(answer || 'N/A');
 }
 
 // ── Coach's Note ────────────────────────────────────────────────────────
@@ -6020,8 +6006,8 @@ function getSpringTrainingLevel() {
     const hasBasicFields = !!(p.name && p.email && p.location
         && (p.target_roles || []).length > 0
         && (p.target_locations || []).length > 0);
-    const hasDeepAnalysis = !!(p.has_profile_doc && p.seniority_level && p.min_salary);
-    const hasReporterAnswers = !!(p.remote_preference && p.remote_preference !== 'any'
+    const hasDeepAnalysis = !!(p.seniority_level && (p.min_salary || p.availability));
+    const hasReporterAnswers = !!(p.remote_preference
         && p.industry_preference
         && p.deal_breakers);
     // The Majors = everything above is done
