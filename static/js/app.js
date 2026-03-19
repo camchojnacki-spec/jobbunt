@@ -1011,7 +1011,7 @@ function renderBaseballCardBlurb(stats) {
 async function loadSwipeStack() {
     if (!state.profileId) return;
     try {
-        state.swipeStack = await api(`/profiles/${state.profileId}/swipe?limit=50`);
+        state.swipeStack = await api(`/profiles/${state.profileId}/swipe?limit=500`);
         state.currentCardIndex = 0;
         state.selectedJobId = state.swipeStack.length > 0 ? state.swipeStack[0].id : null;
         renderBrowseView();
