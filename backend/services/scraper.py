@@ -1506,6 +1506,7 @@ def _generate_tier_variants(base_roles: list[str], seniority_level: str, tiers_d
 
 
 _google_jobs_call_count = 0  # Track calls per search session to limit volume
+_serpapi_call_count = 0  # Track SerpAPI calls per session to avoid exhausting quota
 
 async def search_google_jobs(query: str, location: str, limit: int = 25) -> list[dict]:
     """Search Google Jobs — aggregates Indeed, LinkedIn, Glassdoor, ZipRecruiter, etc.
@@ -1633,8 +1634,14 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
 
     SerpAPI provides clean structured JSON from Google Jobs, which aggregates
     Indeed, LinkedIn, Glassdoor, ZipRecruiter, and many more sources.
-    Free tier: 100 searches/month.
+    Rate limited to 5 calls per search session to avoid quota exhaustion.
     """
+    global _serpapi_call_count
+    _serpapi_call_count += 1
+    if _serpapi_call_count > 5:
+        logger.info(f"SerpAPI: skipping call #{_serpapi_call_count} (max 5 per session to preserve quota)")
+        return []
+
     api_key = os.environ.get("SERPAPI_KEY", "") or _get_source_config().get("serpapi", {}).get("api_key", "")
     if not api_key:
         return []
@@ -1833,9 +1840,12 @@ AVAILABLE_SOURCES = {
 # Map region to which sources to use
 # google_jobs is listed first as it aggregates Indeed/LinkedIn/Glassdoor
 REGION_SOURCES = {
-    "canada": ["google_jobs", "serpapi", "linkedin", "indeed", "glassdoor", "talent", "adzuna", "careerjet", "jobbank", "gcjobs", "remoteok"],
-    "usa": ["google_jobs", "serpapi", "linkedin", "indeed", "glassdoor", "talent", "adzuna", "careerjet", "usajobs", "remoteok"],
-    "global": ["google_jobs", "serpapi", "linkedin", "indeed", "glassdoor", "talent", "adzuna", "careerjet", "remoteok"],
+    # serpapi covers Indeed/Glassdoor/Google Jobs via API (rate-limited to 5 calls/session)
+    # google_jobs direct scraping removed (JS-rendered, always fails)
+    # indeed/glassdoor direct scraping removed (403/429 blocks)
+    "canada": ["serpapi", "linkedin", "careerjet", "talent", "adzuna", "jobbank", "gcjobs", "remoteok"],
+    "usa": ["serpapi", "linkedin", "careerjet", "talent", "adzuna", "usajobs", "remoteok"],
+    "global": ["serpapi", "linkedin", "careerjet", "talent", "adzuna", "remoteok"],
 }
 
 
@@ -2222,8 +2232,9 @@ async def search_all_sources(profile: Profile, sources: list[str] | None = None,
     BOOLEAN_SOURCES = {"indeed", "serpapi"}
 
     # Reset per-session counters
-    global _google_jobs_call_count
+    global _google_jobs_call_count, _serpapi_call_count
     _google_jobs_call_count = 0
+    _serpapi_call_count = 0
 
     all_jobs = []
     source_result_counts: dict[str, int] = {}  # Track per-source totals
