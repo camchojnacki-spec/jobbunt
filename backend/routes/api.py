@@ -716,20 +716,26 @@ def source_health():
 @router.post("/profiles/{profile_id}/search")
 async def search_jobs(
     profile_id: int,
-    background_tasks: BackgroundTasks,
     sources: Optional[list[str]] = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_optional_user),
 ):
     """Trigger a job search for a profile.
 
-    Scrapes jobs synchronously (fast), then enriches and scores in the background.
+    Launches the search as a background task and returns immediately with a task_id.
+    The frontend polls /tasks/{task_id} for completion and /profiles/{id}/jobs/recent
+    for incremental results.
 
     Args:
         sources: Optional list of source keys to search (e.g. ["linkedin", "indeed", "gcjobs"]).
                  If omitted, auto-detects based on target locations.
     """
     profile = _get_profile_for_user(profile_id, user, db)
+
+    # Don't start a new search if one is already running
+    existing = find_running_task("search", profile_id)
+    if existing:
+        return {"task_id": existing, "status": "running"}
 
     # Deep-analyze profile if not done yet (uses rich pasted doc)
     if not profile.profile_analyzed and (profile.raw_profile_doc or profile.resume_text):
@@ -738,36 +744,77 @@ async def search_jobs(
         except Exception as e:
             logger.warning(f"Profile analysis failed: {e}")
 
-    search_result = await search_all_sources(profile, sources=sources)
-    raw_jobs = search_result["jobs"]
-    relevance_filtered = search_result.get("relevance_filtered", 0)
-    new_jobs = save_scraped_jobs(db, profile_id, raw_jobs)
+    task_id = run_background("search", profile_id, _bg_search_and_score, profile_id, sources)
+    return {"task_id": task_id, "status": "running"}
 
-    # Quick rule-based scoring immediately so jobs appear with some score
-    # Batch commits every 10 jobs instead of per-job
-    for idx, job in enumerate(new_jobs):
+
+async def _bg_search_and_score(profile_id: int, sources: list[str] | None):
+    """Background worker: scrape, save, rule-score, then kick off enrichment."""
+    db = SessionLocal()
+    try:
+        profile = db.query(Profile).filter(Profile.id == profile_id).first()
+        if not profile:
+            return {"error": "Profile not found"}
+
+        # 1. SCRAPE
+        search_result = await search_all_sources(profile, sources=sources)
+        raw_jobs = search_result["jobs"]
+        relevance_filtered = search_result.get("relevance_filtered", 0)
+
+        # 2. DEDUPLICATE & SAVE
+        new_jobs = save_scraped_jobs(db, profile_id, raw_jobs)
+
+        # 3. QUICK RULE-BASED SCORING
+        for idx, job in enumerate(new_jobs):
+            try:
+                company = db.query(Company).filter(Company.id == job.company_id).first() if job.company_id else None
+                result = score_job_multidim(job, profile, company)
+                job.match_score = result["score"]
+                job.match_reasons = json.dumps(result["reasons"])
+                job.match_breakdown = json.dumps(result["breakdown"])
+                if (idx + 1) % 10 == 0:
+                    db.commit()
+            except Exception:
+                pass
+        db.commit()
+
+        # 4. ENRICH & AI-SCORE (background sub-task)
+        job_ids = [j.id for j in new_jobs]
+        if job_ids:
+            asyncio.get_event_loop().create_task(
+                _bg_enrich_and_score(profile_id, job_ids)
+            )
+
+        return {
+            "total_found": len(raw_jobs) + relevance_filtered,
+            "new_jobs": len(new_jobs),
+            "duplicates_skipped": len(raw_jobs) - len(new_jobs),
+            "relevance_filtered": relevance_filtered,
+        }
+    except Exception as e:
+        logger.error(f"Background search failed: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
+@router.get("/profiles/{profile_id}/jobs/recent")
+def get_recent_jobs(profile_id: int, since: Optional[str] = None,
+                    db: Session = Depends(get_db), user: User = Depends(get_optional_user)):
+    """Get jobs added since a timestamp. Used by frontend polling during search."""
+    _get_profile_for_user(profile_id, user, db)
+    query = db.query(Job).filter(Job.profile_id == profile_id, Job.status == "pending")
+    if since:
         try:
-            company = db.query(Company).filter(Company.id == job.company_id).first() if job.company_id else None
-            result = score_job_multidim(job, profile, company)
-            job.match_score = result["score"]
-            job.match_reasons = json.dumps(result["reasons"])
-            job.match_breakdown = json.dumps(result["breakdown"])
-            if (idx + 1) % 10 == 0:
-                db.commit()
+            since_dt = datetime.fromisoformat(since.replace('Z', '+00:00'))
+            query = query.filter(Job.created_at > since_dt)
         except Exception:
             pass
-    db.commit()  # Final commit for remaining jobs
-
-    # Enrich and AI-score in background (won't block the response)
-    job_ids = [j.id for j in new_jobs]
-    if job_ids:
-        background_tasks.add_task(_bg_enrich_and_score, profile_id, job_ids)
-
+    jobs = query.order_by(Job.match_score.desc()).limit(50).all()
     return {
-        "total_found": len(raw_jobs) + relevance_filtered,
-        "new_jobs": len(new_jobs),
-        "duplicates_skipped": len(raw_jobs) - len(new_jobs),
-        "relevance_filtered": relevance_filtered,
+        "jobs": [_job_dict(j, db) for j in jobs],
+        "count": len(jobs),
+        "total_pending": db.query(Job).filter(Job.profile_id == profile_id, Job.status == "pending").count()
     }
 
 
