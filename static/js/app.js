@@ -239,23 +239,10 @@ async function loadProfile() {
 
 function setProfileMode(mode) {
     state.profileMode = mode;
-    const pasteMode = document.getElementById('profile-paste-mode');
     const manualMode = document.getElementById('profile-form');
-    const btnPaste = document.getElementById('btn-mode-paste');
-    const btnManual = document.getElementById('btn-mode-manual');
-
-    if (mode === 'paste') {
-        if (pasteMode) pasteMode.style.display = 'block';
-        if (manualMode) manualMode.style.display = 'none';
-        if (btnPaste) btnPaste.className = 'btn btn-primary';
-        if (btnManual) btnManual.className = 'btn btn-secondary';
-    } else {
-        if (pasteMode) pasteMode.style.display = 'none';
-        if (manualMode) manualMode.style.display = 'block';
-        if (btnPaste) btnPaste.className = 'btn btn-secondary';
-        if (btnManual) btnManual.className = 'btn btn-primary';
-        if (state.profile) populateProfileForm(state.profile);
-    }
+    // Always show the profile form — both modes need it visible
+    if (manualMode) manualMode.style.display = 'block';
+    if (state.profile) populateProfileForm(state.profile);
 }
 
 function handleResumeSelected(input) {
@@ -680,13 +667,41 @@ async function searchJobs() {
     searchBtns.forEach(btn => {
         btn.disabled = true;
         btn._origText = btn.textContent;
-        btn.innerHTML = `<svg width="36" height="14" viewBox="0 0 120 40" fill="none" style="display:inline-block;vertical-align:middle;margin-right:4px">
-            <style>@keyframes dp{0%,100%{opacity:.15;r:4}50%{opacity:.7;r:5.5}}</style>
-            <circle cx="30" cy="20" r="4" fill="#C4962C" style="animation:dp 1.2s ease-in-out infinite"/>
-            <circle cx="60" cy="20" r="4" fill="#C4962C" style="animation:dp 1.2s ease-in-out .2s infinite"/>
-            <circle cx="90" cy="20" r="4" fill="#C4962C" style="animation:dp 1.2s ease-in-out .4s infinite"/>
-        </svg>Searching...`;
     });
+
+    // Show search progress overlay in the empty state area
+    const empty = document.getElementById('empty-state');
+    const searchStages = [
+        '🔍 Expanding search queries with AI...',
+        '🌐 Searching LinkedIn...',
+        '🌐 Searching Indeed...',
+        '🌐 Searching Glassdoor...',
+        '🌐 Searching government job boards...',
+        '📊 Scoring and ranking results...',
+        '🧹 Removing duplicates...',
+        '✅ Almost done...'
+    ];
+    let stageIdx = 0;
+    if (empty) {
+        empty.style.display = 'block';
+        empty.innerHTML = `
+            <div style="text-align:center;padding:40px 20px">
+                <div style="font-size:48px;margin-bottom:16px">⚾</div>
+                <h2 style="margin-bottom:8px">Scouting for Jobs...</h2>
+                <p id="search-stage-text" style="color:var(--text-dim);margin-bottom:16px">${searchStages[0]}</p>
+                <div style="width:80%;max-width:400px;height:6px;background:var(--jb-surface-alt,#1a2744);border-radius:3px;margin:0 auto 12px">
+                    <div id="search-progress-bar" style="width:5%;height:100%;background:linear-gradient(90deg,#C4962C,#3DB87A);border-radius:3px;transition:width 0.5s ease"></div>
+                </div>
+                <p style="font-size:11px;color:var(--text-dim)">This typically takes 30-90 seconds depending on how many sources are enabled.</p>
+            </div>`;
+    }
+    const _searchInterval = setInterval(() => {
+        stageIdx = Math.min(stageIdx + 1, searchStages.length - 1);
+        const stageEl = document.getElementById('search-stage-text');
+        const barEl = document.getElementById('search-progress-bar');
+        if (stageEl) stageEl.textContent = searchStages[stageIdx];
+        if (barEl) barEl.style.width = Math.min(5 + (stageIdx / searchStages.length) * 85, 90) + '%';
+    }, 8000);
 
     try {
         // Get selected sources from checkboxes
@@ -736,6 +751,10 @@ async function searchJobs() {
     } catch (e) {
         toast('Search failed: ' + e.message, 'error');
     } finally {
+        clearInterval(_searchInterval);
+        // Complete the progress bar
+        const barEl = document.getElementById('search-progress-bar');
+        if (barEl) barEl.style.width = '100%';
         state.searching = false;
         searchBtns.forEach(btn => {
             btn.disabled = false;
@@ -3174,6 +3193,21 @@ async function reanalyzeProfile() {
     }
 }
 
+async function runSpringTrainingAnalysis(btn) {
+    if (!state.profileId) { toast('No profile to analyze', 'error'); return; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Analyzing...'; }
+    try {
+        await api(`/profiles/${state.profileId}/analyze`, { method: 'POST' });
+        toast('Profile analyzed! Level updated.', 'success');
+        await loadProfile();
+        if (typeof loadSpringTraining === 'function') loadSpringTraining();
+    } catch (e) {
+        toast('Analysis failed: ' + e.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Analyze Profile'; }
+    }
+}
+
 async function verifyAllJobs() {
     if (!state.profileId) return;
     toast('Verifying pending jobs...', 'info');
@@ -3209,13 +3243,25 @@ async function loadApplyReadiness() {
                 </div>
             </div>
             <div class="readiness-checks">
-                ${data.checks.map(c => `
-                    <div class="readiness-check ${c.passed ? 'check-pass' : 'check-fail'}">
+                ${data.checks.map(c => {
+                    // Make failing checks clickable with appropriate actions
+                    let onclick = '';
+                    if (!c.passed) {
+                        const n = c.name.toLowerCase();
+                        if (n.includes('resume')) onclick = `onclick="document.getElementById('resume-drop-zone')?.scrollIntoView({behavior:'smooth',block:'center'})"`;
+                        else if (n.includes('salary')) onclick = `onclick="document.getElementById('f-min-salary')?.scrollIntoView({behavior:'smooth',block:'center'});document.getElementById('f-min-salary')?.focus()"`;
+                        else if (n.includes('remote')) onclick = `onclick="document.getElementById('f-remote')?.scrollIntoView({behavior:'smooth',block:'center'});document.getElementById('f-remote')?.focus()"`;
+                        else if (n.includes('summary') || n.includes('strength') || n.includes('analyzed') || n.includes('seniority')) onclick = `onclick="runSpringTrainingAnalysis(null)"`;
+                        else if (n.includes('advisor')) onclick = `onclick="showView('bullpen')"`;
+                        else onclick = `onclick="document.getElementById('profile-form')?.scrollIntoView({behavior:'smooth',block:'start'})"`;
+                    }
+                    return `
+                    <div class="readiness-check ${c.passed ? 'check-pass' : 'check-fail'}" ${onclick} style="${!c.passed ? 'cursor:pointer' : ''}">
                         <span class="check-icon">${c.passed ? '✓' : '✕'}</span>
                         <span class="check-name">${esc(c.name)}</span>
                         <span class="check-detail">${esc(c.detail)}</span>
-                    </div>
-                `).join('')}
+                    </div>`;
+                }).join('')}
             </div>
         `;
     } catch (e) {
@@ -4344,6 +4390,7 @@ window.clearFilters = clearFilters;
 window.showAppDetail = showAppDetail;
 window.rescoreJobs = rescoreJobs;
 window.reanalyzeProfile = reanalyzeProfile;
+window.runSpringTrainingAnalysis = runSpringTrainingAnalysis;
 window.verifyAllJobs = verifyAllJobs;
 window.reenrichCompanies = reenrichCompanies;
 window.submitSingleAnswer = submitSingleAnswer;
@@ -5877,8 +5924,7 @@ async function saveReporterAnswer() {
     // Used for free-text questions only
     const taEl = document.getElementById('reporter-textarea');
     const answer = taEl ? taEl.value.trim() : '';
-    if (!answer) { toast('Type your answer first', 'warning'); return; }
-    await _saveReporterValue(answer);
+    await _saveReporterValue(answer || 'N/A');
 }
 
 // ── Coach's Note ────────────────────────────────────────────────────────
@@ -5992,8 +6038,8 @@ function getSpringTrainingLevel() {
     const hasBasicFields = !!(p.name && p.email && p.location
         && (p.target_roles || []).length > 0
         && (p.target_locations || []).length > 0);
-    const hasDeepAnalysis = !!(p.has_profile_doc && p.seniority_level && p.min_salary);
-    const hasReporterAnswers = !!(p.remote_preference && p.remote_preference !== 'any'
+    const hasDeepAnalysis = !!(p.seniority_level && (p.min_salary || p.availability));
+    const hasReporterAnswers = !!(p.remote_preference
         && p.industry_preference
         && p.deal_breakers);
     // The Majors = everything above is done
@@ -6056,7 +6102,7 @@ function loadSpringTraining() {
     const actions = [
         `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Upload Resume</button>`,
         `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Edit Profile</button>`,
-        `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Analyze Profile</button>`,
+        `<button class="btn btn-primary btn-sm" onclick="runSpringTrainingAnalysis(this)">Analyze Profile</button>`,
         `<button class="btn btn-primary btn-sm" onclick="showView('dugout');setTimeout(()=>document.getElementById('dugout-reporter-corner')?.scrollIntoView({behavior:'smooth',block:'center'}),200)">Answer Questions</button>`,
         null,
     ];
