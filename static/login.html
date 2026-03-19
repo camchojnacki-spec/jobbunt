@@ -377,13 +377,14 @@
             if (e.key === 'Enter') handleLocalAuth();
         });
 
-        // Hide Google button if not configured or if accessing from non-localhost
-        // (Google OAuth only works with localhost callback, not private IPs)
-        const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+        // Hide Google button if not configured or if accessing from a private IP
+        // (Google OAuth works on localhost and registered production domains, not private IPs like 192.168.x.x)
+        const hostname = window.location.hostname;
+        const isPrivateIP = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname);
         fetch('/auth/config')
             .then(r => r.json())
             .then(config => {
-                if (!config.google_client_id || !isLocalhost) {
+                if (!config.google_client_id || isPrivateIP) {
                     document.getElementById('google-btn').style.display = 'none';
                     const dividers = document.querySelectorAll('.divider');
                     if (dividers[0]) dividers[0].style.display = 'none';
