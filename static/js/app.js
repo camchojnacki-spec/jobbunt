@@ -3243,40 +3243,195 @@ async function loadApplyReadiness() {
             profileForm.insertBefore(container, profileForm.firstChild);
         }
 
-        const scoreColor = data.score >= 80 ? 'var(--green)' : data.score >= 50 ? 'var(--orange)' : 'var(--red)';
+        const pScore = data.profile_score != null ? data.profile_score : data.score;
+        const scoreColor = pScore >= 80 ? '#4CAF50' : pScore >= 50 ? '#FFA726' : '#EF5350';
+        const scoreTitle = pScore >= 80 ? 'Profile Ready' : 'Building Profile';
+        const totalChecks = (data.checks || []).length;
+        const passedChecks = (data.checks || []).filter(c => c.passed).length;
+
+        // Split checks into profile vs search tiers
+        const profileChecks = (data.checks || []).filter(c => c.tier !== 'search');
+        const searchChecks = (data.checks || []).filter(c => c.tier === 'search');
+        const profilePassed = profileChecks.filter(c => c.passed).length;
+        const searchPassed = searchChecks.filter(c => c.passed).length;
+        const profileTierScore = profileChecks.length > 0 ? Math.round(profilePassed / profileChecks.length * 100) : 0;
+        const searchTierScore = searchChecks.length > 0 ? Math.round(searchPassed / searchChecks.length * 100) : 0;
+
+        function renderCheck(c) {
+            const actionAttr = (!c.passed && c.action) ? ` onclick="handleReadinessAction('${esc(c.action)}')"` : '';
+            const cursorStyle = (!c.passed && c.action) ? ' cursor:pointer;' : '';
+            return `<div class="readiness-check ${c.passed ? 'check-pass' : 'check-fail'}"${actionAttr} style="${cursorStyle}">
+                <span class="check-icon">${c.passed ? '✓' : '✕'}</span>
+                <span class="check-name">${esc(c.name)}</span>
+                <span class="check-detail">${esc(c.detail)}</span>
+            </div>`;
+        }
+
+        // Profile tier
+        const profileTierHtml = `<div class="readiness-tier">
+            <div class="readiness-tier-header" onclick="toggleReadinessTier('profile')">
+                <span class="readiness-tier-title">Profile Readiness</span>
+                <span class="readiness-tier-score" style="color:${profileTierScore >= 80 ? '#4CAF50' : profileTierScore >= 50 ? '#FFA726' : '#EF5350'}">${profileTierScore}%</span>
+                <span class="readiness-tier-chevron" id="readiness-profile-chevron">▼</span>
+            </div>
+            <div class="readiness-tier-body" id="readiness-profile-body">
+                ${profileChecks.map(renderCheck).join('')}
+            </div>
+        </div>`;
+
+        // Search tier
+        let searchTierHtml = '';
+        if (data.has_searched) {
+            searchTierHtml = `<div class="readiness-tier">
+                <div class="readiness-tier-header" onclick="toggleReadinessTier('search')">
+                    <span class="readiness-tier-title">Search Performance</span>
+                    <span class="readiness-tier-score" style="color:${searchTierScore >= 80 ? '#4CAF50' : searchTierScore >= 50 ? '#FFA726' : '#EF5350'}">${searchTierScore}%</span>
+                    <span class="readiness-tier-chevron" id="readiness-search-chevron">▼</span>
+                </div>
+                <div class="readiness-tier-body" id="readiness-search-body">
+                    ${searchChecks.map(renderCheck).join('')}
+                </div>
+            </div>`;
+        } else {
+            searchTierHtml = `<div class="readiness-tier readiness-tier-locked">
+                <div class="readiness-tier-header readiness-locked-header">
+                    <span class="readiness-tier-title">Search Performance</span>
+                    <span class="readiness-tier-badge">LOCKED</span>
+                </div>
+                <div class="readiness-locked-msg">Complete your first search to unlock performance metrics.</div>
+            </div>`;
+        }
+
         container.innerHTML = `
             <div class="readiness-header">
-                <div class="readiness-score" style="color:${scoreColor}">${data.score}%</div>
+                <div class="readiness-score" style="color:${scoreColor}">${pScore}%</div>
                 <div>
-                    <div class="readiness-title">${data.ready ? 'Ready to Apply' : 'Not Quite Ready'}</div>
-                    <div class="readiness-sub">${data.passed}/${data.total} checks passed</div>
+                    <div class="readiness-title">${scoreTitle}</div>
+                    <div class="readiness-sub">${passedChecks}/${totalChecks} profile checks passed</div>
                 </div>
             </div>
-            <div class="readiness-checks">
-                ${data.checks.map(c => {
-                    // Make failing checks clickable with appropriate actions
-                    let onclick = '';
-                    if (!c.passed) {
-                        const n = c.name.toLowerCase();
-                        if (n.includes('resume')) onclick = `onclick="document.getElementById('resume-drop-zone')?.scrollIntoView({behavior:'smooth',block:'center'})"`;
-                        else if (n.includes('salary')) onclick = `onclick="document.getElementById('f-min-salary')?.scrollIntoView({behavior:'smooth',block:'center'});document.getElementById('f-min-salary')?.focus()"`;
-                        else if (n.includes('remote')) onclick = `onclick="document.getElementById('f-remote')?.scrollIntoView({behavior:'smooth',block:'center'});document.getElementById('f-remote')?.focus()"`;
-                        else if (n.includes('summary') || n.includes('strength') || n.includes('analyzed') || n.includes('seniority')) onclick = `onclick="runSpringTrainingAnalysis(null)"`;
-                        else if (n.includes('advisor')) onclick = `onclick="showView('bullpen')"`;
-                        else onclick = `onclick="document.getElementById('profile-form')?.scrollIntoView({behavior:'smooth',block:'start'})"`;
-                    }
-                    return `
-                    <div class="readiness-check ${c.passed ? 'check-pass' : 'check-fail'}" ${onclick} style="${!c.passed ? 'cursor:pointer' : ''}">
-                        <span class="check-icon">${c.passed ? '✓' : '✕'}</span>
-                        <span class="check-name">${esc(c.name)}</span>
-                        <span class="check-detail">${esc(c.detail)}</span>
-                    </div>`;
-                }).join('')}
-            </div>
+            ${profileTierHtml}
+            ${searchTierHtml}
         `;
     } catch (e) {
         console.error('Failed to load readiness:', e);
     }
+}
+
+function handleReadinessAction(action) {
+    if (action.startsWith('scroll:')) {
+        const elId = action.replace('scroll:', '');
+        showView('profile'); // switch to profile tab first
+        setTimeout(() => {
+            const el = document.getElementById(elId);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('readiness-highlight');
+                setTimeout(() => el.classList.remove('readiness-highlight'), 2000);
+                if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') el.focus();
+            }
+        }, 300);
+    } else if (action === 'run:analyzeProfile') {
+        runSpringTrainingAnalysis(null);
+    } else if (action === 'run:searchJobs') {
+        showView('hunt');
+    } else if (action.startsWith('view:')) {
+        showView(action.replace('view:', ''));
+    }
+}
+
+function toggleReadinessTier(tier) {
+    const body = document.getElementById('readiness-' + tier + '-body');
+    const chevron = document.getElementById('readiness-' + tier + '-chevron');
+    if (body) body.classList.toggle('collapsed');
+    if (chevron) chevron.classList.toggle('rotated');
+}
+
+function loadClubhouseCard(container, taEl, saveBtn) {
+    if (taEl) taEl.style.display = 'none';
+    if (saveBtn) saveBtn.style.display = 'none';
+
+    // Update card labels
+    const labelEl = document.querySelector('#dugout-reporter-corner .dugout-card-label');
+    const titleEl = document.querySelector('#dugout-reporter-corner .dugout-card-title');
+    const hintEl = document.getElementById('reporter-triple-a-hint');
+    if (labelEl) labelEl.textContent = 'THE CLUBHOUSE';
+    if (titleEl) titleEl.textContent = 'Home Base';
+    if (hintEl) { hintEl.textContent = "You've made The Majors"; hintEl.classList.add('completed'); }
+
+    const jobCount = (state.swipeStack || []).length;
+    const shortlisted = (state.swipeStack || []).filter(j => j.status === 'shortlisted').length;
+
+    // Market Pulse
+    let marketHtml = '';
+    if (jobCount > 0) {
+        const topMatch = [...(state.swipeStack || [])].sort((a, b) => (b.match_score || 0) - (a.match_score || 0))[0];
+        marketHtml = `<div class="clubhouse-section">
+            <div class="clubhouse-section-label">MARKET PULSE</div>
+            <div class="clubhouse-pulse-stat">${jobCount} jobs in pipeline</div>
+            ${topMatch ? `<div class="clubhouse-pulse-top">Top match: <strong>${esc(topMatch.title)}</strong> at ${esc(topMatch.company)} <span class="clubhouse-score">${Math.round(topMatch.match_score || 0)}</span></div>` : ''}
+        </div>`;
+    } else {
+        marketHtml = `<div class="clubhouse-section">
+            <div class="clubhouse-section-label">MARKET PULSE</div>
+            <div class="clubhouse-empty">Run your first search to see market data.</div>
+        </div>`;
+    }
+
+    // Profile Tune-up
+    const tuneUp = getProfileTuneUp();
+    const tuneUpHtml = tuneUp ? `<div class="clubhouse-section">
+        <div class="clubhouse-section-label">PROFILE TUNE-UP</div>
+        <div class="clubhouse-tuneup">${tuneUp}</div>
+    </div>` : '';
+
+    container.innerHTML = `
+        <div class="clubhouse-actions">
+            <button class="btn btn-primary btn-sm" onclick="showView('hunt')">Search Jobs</button>
+            <button class="btn btn-outline btn-sm" onclick="showView('prospects')">View Shortlist</button>
+            ${jobCount > 0 ? `<span class="clubhouse-badge">${jobCount} jobs</span>` : ''}
+            ${shortlisted > 0 ? `<span class="clubhouse-badge clubhouse-badge-green">${shortlisted} shortlisted</span>` : ''}
+        </div>
+        ${marketHtml}
+        ${tuneUpHtml}
+        <div class="clubhouse-footer">
+            <a href="#" class="clubhouse-reanswer" onclick="resetReporterCorner();return false;">Update your answers</a>
+        </div>
+    `;
+}
+
+function getProfileTuneUp() {
+    const p = state.profile;
+    if (!p) return null;
+    if (!p.cover_letter_template) return 'Add cover letter style notes to generate better cover letters.';
+    if (!p.profile_analyzed) return 'Run AI analysis on your profile for smarter matching.';
+    if ((p.skills || []).length < 5) return 'Add more skills — aim for at least 5 to improve match accuracy.';
+    if (!p.phone) return 'Add your phone number — many applications require it.';
+    if (state.swipeStack && state.swipeStack.length > 0) {
+        const skills = (p.skills || []).map(s => s.toLowerCase());
+        const jobTexts = state.swipeStack.slice(0, 20).map(j => ((j.requirements || '') + ' ' + (j.description || '')).toLowerCase()).join(' ');
+        const keywords = ['python', 'javascript', 'aws', 'sql', 'react', 'docker', 'kubernetes', 'azure', 'agile', 'terraform', 'ci/cd'];
+        for (const kw of keywords) {
+            if (!skills.some(s => s.includes(kw)) && (jobTexts.match(new RegExp(kw, 'gi')) || []).length >= 3) {
+                return `Consider adding "${kw}" to your skills — it appears frequently in your matched jobs.`;
+            }
+        }
+    }
+    return null;
+}
+
+function resetReporterCorner() {
+    _reporterQuestionIndex = 0;
+    REPORTER_QUESTIONS.forEach(rq => {
+        if (rq.profileField && state.profile) state.profile[rq.profileField] = null;
+    });
+    if (state.profileId) {
+        const clearBody = {};
+        REPORTER_QUESTIONS.forEach(rq => { if (rq.profileField) clearBody[rq.profileField] = null; });
+        api('/profiles/' + state.profileId, { method: 'PUT', body: clearBody }).catch(() => {});
+    }
+    loadReporterCorner();
+    if (typeof loadSpringTraining === 'function') loadSpringTraining();
 }
 
 async function reenrichCompanies() {
@@ -5755,14 +5910,7 @@ function loadReporterCorner() {
 
     // All answered?
     if (attempts >= REPORTER_QUESTIONS.length) {
-        if (container) container.innerHTML = `
-            <div style="text-align:center;padding:16px 0">
-                <div style="font-size:24px;margin-bottom:8px">🏟️</div>
-                <div style="font-size:14px;font-weight:500;color:var(--text-bright)">All questions answered!</div>
-                <div style="font-size:12px;color:var(--text-dim);margin-top:4px">Your profile is fully built. You've made The Majors.</div>
-            </div>`;
-        if (taEl) taEl.style.display = 'none';
-        if (saveBtn) saveBtn.style.display = 'none';
+        loadClubhouseCard(container, taEl, saveBtn);
         return;
     }
 
@@ -6028,10 +6176,11 @@ async function loadDugoutReadiness() {
             const r = await api(`/profiles/${state.profileId}/apply-readiness`);
             const el = document.getElementById('dugout-readiness');
             if (!el) return;
-            const emoji = r.score >= 70 ? '🟢' : r.score >= 40 ? '🟡' : '🔴';
+            const rScore = r.profile_score != null ? r.profile_score : r.score;
+            const emoji = rScore >= 70 ? '🟢' : rScore >= 40 ? '🟡' : '🔴';
             el.innerHTML = `<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--jb-bg-secondary);border-radius:8px;border:1px solid var(--jb-border)">
                 <span style="font-size:24px">${emoji}</span>
-                <div><div style="font-size:16px;font-weight:600">${r.score}% Ready</div><div style="font-size:12px;color:var(--jb-text-2)">${r.passed}/${r.total} checks passed &mdash; Spring Training Complete!</div></div>
+                <div><div style="font-size:16px;font-weight:600">${rScore}% Ready</div><div style="font-size:12px;color:var(--jb-text-2)">${r.passed}/${r.total} checks passed &mdash; Spring Training Complete!</div></div>
             </div>`;
         } catch {}
     }
@@ -6383,3 +6532,6 @@ window.applyEnhancedPrompt = applyEnhancedPrompt;
 window.saveModelOverride = saveModelOverride;
 window.clearModelOverride = clearModelOverride;
 window.loadSpringTraining = loadSpringTraining;
+window.handleReadinessAction = handleReadinessAction;
+window.toggleReadinessTier = toggleReadinessTier;
+window.resetReporterCorner = resetReporterCorner;
