@@ -3174,6 +3174,21 @@ async function reanalyzeProfile() {
     }
 }
 
+async function runSpringTrainingAnalysis(btn) {
+    if (!state.profileId) { toast('No profile to analyze', 'error'); return; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Analyzing...'; }
+    try {
+        await api(`/profiles/${state.profileId}/analyze`, { method: 'POST' });
+        toast('Profile analyzed! Level updated.', 'success');
+        await loadProfile();
+        if (typeof loadSpringTraining === 'function') loadSpringTraining();
+    } catch (e) {
+        toast('Analysis failed: ' + e.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Analyze Profile'; }
+    }
+}
+
 async function verifyAllJobs() {
     if (!state.profileId) return;
     toast('Verifying pending jobs...', 'info');
@@ -3209,13 +3224,25 @@ async function loadApplyReadiness() {
                 </div>
             </div>
             <div class="readiness-checks">
-                ${data.checks.map(c => `
-                    <div class="readiness-check ${c.passed ? 'check-pass' : 'check-fail'}">
+                ${data.checks.map(c => {
+                    // Make failing checks clickable with appropriate actions
+                    let onclick = '';
+                    if (!c.passed) {
+                        const n = c.name.toLowerCase();
+                        if (n.includes('resume')) onclick = `onclick="document.getElementById('resume-drop-zone')?.scrollIntoView({behavior:'smooth',block:'center'})"`;
+                        else if (n.includes('salary')) onclick = `onclick="document.getElementById('f-min-salary')?.scrollIntoView({behavior:'smooth',block:'center'});document.getElementById('f-min-salary')?.focus()"`;
+                        else if (n.includes('remote')) onclick = `onclick="document.getElementById('f-remote')?.scrollIntoView({behavior:'smooth',block:'center'});document.getElementById('f-remote')?.focus()"`;
+                        else if (n.includes('summary') || n.includes('strength') || n.includes('analyzed') || n.includes('seniority')) onclick = `onclick="runSpringTrainingAnalysis(null)"`;
+                        else if (n.includes('advisor')) onclick = `onclick="showView('bullpen')"`;
+                        else onclick = `onclick="document.getElementById('profile-form')?.scrollIntoView({behavior:'smooth',block:'start'})"`;
+                    }
+                    return `
+                    <div class="readiness-check ${c.passed ? 'check-pass' : 'check-fail'}" ${onclick} style="${!c.passed ? 'cursor:pointer' : ''}">
                         <span class="check-icon">${c.passed ? '✓' : '✕'}</span>
                         <span class="check-name">${esc(c.name)}</span>
                         <span class="check-detail">${esc(c.detail)}</span>
-                    </div>
-                `).join('')}
+                    </div>`;
+                }).join('')}
             </div>
         `;
     } catch (e) {
@@ -4344,6 +4371,7 @@ window.clearFilters = clearFilters;
 window.showAppDetail = showAppDetail;
 window.rescoreJobs = rescoreJobs;
 window.reanalyzeProfile = reanalyzeProfile;
+window.runSpringTrainingAnalysis = runSpringTrainingAnalysis;
 window.verifyAllJobs = verifyAllJobs;
 window.reenrichCompanies = reenrichCompanies;
 window.submitSingleAnswer = submitSingleAnswer;
@@ -6056,7 +6084,7 @@ function loadSpringTraining() {
     const actions = [
         `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Upload Resume</button>`,
         `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Edit Profile</button>`,
-        `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Analyze Profile</button>`,
+        `<button class="btn btn-primary btn-sm" onclick="runSpringTrainingAnalysis(this)">Analyze Profile</button>`,
         `<button class="btn btn-primary btn-sm" onclick="showView('dugout');setTimeout(()=>document.getElementById('dugout-reporter-corner')?.scrollIntoView({behavior:'smooth',block:'center'}),200)">Answer Questions</button>`,
         null,
     ];
