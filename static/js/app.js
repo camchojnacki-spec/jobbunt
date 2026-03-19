@@ -5638,6 +5638,16 @@ async function _doImproveResume(el) {
 // Question types: 'single' (pick one), 'multi' (pick many), 'boolean' (yes/no), 'text' (free-form)
 // level: which Spring Training level this question advances (single_a, double_a, triple_a)
 const REPORTER_QUESTIONS = [
+    // ── ROOKIE BALL: Essential profile fields ────────────────────────────────
+    { q: "What job titles are you targeting?", type: "text", level: "single_a",
+      profileField: "target_roles", fillsProfile: true,
+      placeholder: "E.g., Software Developer, Project Manager, Data Analyst — separate with commas",
+      saveAs: "csv_to_json" },
+    { q: "Where do you want to work?", type: "text", level: "single_a",
+      profileField: "target_locations", fillsProfile: true,
+      placeholder: "E.g., Toronto, ON, Remote, Vancouver, BC — separate with commas",
+      saveAs: "csv_to_json" },
+
     // ── SINGLE-A: Core job search parameters ───────────────────────────────
     { q: "What level of role are you targeting?", type: "single", level: "single_a",
       choices: ["Entry-level / Junior", "Mid-level / Intermediate", "Senior / Lead", "Manager / Senior Manager", "Director / VP", "Executive (C-Suite)"],
@@ -5890,7 +5900,12 @@ function confirmReporterMulti() {
 
 async function _saveReporterValue(rawAnswer) {
     const q = REPORTER_QUESTIONS[_reporterQuestionIndex % REPORTER_QUESTIONS.length];
-    const mappedValue = q.mapTo ? (q.mapTo[rawAnswer] || rawAnswer) : rawAnswer;
+    let mappedValue = q.mapTo ? (q.mapTo[rawAnswer] || rawAnswer) : rawAnswer;
+
+    // Convert comma-separated text to JSON array for list fields
+    if (q.saveAs === 'csv_to_json' && typeof mappedValue === 'string') {
+        mappedValue = mappedValue.split(',').map(s => s.trim()).filter(Boolean);
+    }
 
     try {
         if (state.profileId && q.profileField) {
@@ -5934,7 +5949,13 @@ async function saveReporterAnswer() {
     // Used for free-text questions only
     const taEl = document.getElementById('reporter-textarea');
     const answer = taEl ? taEl.value.trim() : '';
-    await _saveReporterValue(answer || 'N/A');
+    const q = REPORTER_QUESTIONS[_reporterQuestionIndex % REPORTER_QUESTIONS.length];
+    // For csv_to_json fields, require at least one entry
+    if (q.saveAs === 'csv_to_json' && !answer) {
+        toast('Please enter at least one item', 'warning');
+        return;
+    }
+    await _saveReporterValue(answer || 'Skipped');
 }
 
 // ── Coach's Note ────────────────────────────────────────────────────────
