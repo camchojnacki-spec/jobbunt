@@ -2831,90 +2831,100 @@ def get_apply_readiness(profile_id: int, db: Session = Depends(get_db)):
     if not profile:
         raise HTTPException(404, "Profile not found")
 
-    categories = []
+    profile_categories = []
+    search_categories = []
 
-    def add_category(name, checks_list):
+    def add_profile_category(name, checks_list):
         passed = sum(1 for c in checks_list if c["passed"])
-        categories.append({
+        profile_categories.append({
             "category": name,
             "checks": checks_list,
             "passed": passed,
             "total": len(checks_list),
         })
 
-    def check(name, passed, detail=""):
-        return {"name": name, "passed": passed, "detail": detail}
+    def add_search_category(name, checks_list):
+        passed = sum(1 for c in checks_list if c["passed"])
+        search_categories.append({
+            "category": name,
+            "checks": checks_list,
+            "passed": passed,
+            "total": len(checks_list),
+        })
 
-    # ── Profile Basics ─────────────────────────────────────────────────
+    def check(name, passed, detail="", action=""):
+        return {"name": name, "passed": passed, "detail": detail, "action": action}
+
+    # ── Profile Basics (Profile Readiness) ─────────────────────────────
     basics = []
-    basics.append(check("Full name", bool(profile.name), profile.name or "Missing"))
-    basics.append(check("Email address", bool(profile.email), profile.email or "Required for applications"))
-    basics.append(check("Phone number", bool(profile.phone), profile.phone or "Many applications require this"))
-    basics.append(check("Location", bool(profile.location), profile.location or "Needed for location-based filtering"))
+    basics.append(check("Full name", bool(profile.name), profile.name or "Missing", "scroll:f-name"))
+    basics.append(check("Email address", bool(profile.email), profile.email or "Required for applications", "scroll:f-email"))
+    basics.append(check("Phone number", bool(profile.phone), profile.phone or "Many applications require this", "scroll:f-phone"))
+    basics.append(check("Location", bool(profile.location), profile.location or "Needed for location-based filtering", "scroll:f-location"))
 
     has_resume = bool(profile.resume_path) or bool(profile.resume_text)
-    basics.append(check("Resume uploaded", has_resume, "Most applications require a resume file"))
+    basics.append(check("Resume uploaded", has_resume, "Most applications require a resume file", "scroll:resume-drop-zone"))
 
     skills = _safe_json(profile.skills, [])
-    basics.append(check("Skills listed (3+)", len(skills) >= 3, f"{len(skills)} skills" if skills else "Add at least 3 skills"))
+    basics.append(check("Skills listed (3+)", len(skills) >= 3, f"{len(skills)} skills" if skills else "Add at least 3 skills", "scroll:f-skills-input"))
 
-    basics.append(check("Years of experience", profile.experience_years is not None, f"{profile.experience_years} years" if profile.experience_years else "Helps with seniority matching"))
+    basics.append(check("Years of experience", profile.experience_years is not None, f"{profile.experience_years} years" if profile.experience_years else "Helps with seniority matching", "scroll:f-experience"))
 
     roles = _safe_json(profile.target_roles, [])
-    basics.append(check("Target roles defined", len(roles) >= 1, f"{len(roles)} roles" if roles else "Define what you're looking for"))
+    basics.append(check("Target roles defined", len(roles) >= 1, f"{len(roles)} roles" if roles else "Define what you're looking for", "scroll:f-roles-input"))
 
-    basics.append(check("Profile analyzed by AI", bool(profile.profile_analyzed), "Enables smarter cover letters and matching"))
+    basics.append(check("Profile analyzed by AI", bool(profile.profile_analyzed), "Enables smarter cover letters and matching", "run:analyzeProfile"))
 
-    basics.append(check("Cover letter style notes", bool(profile.cover_letter_template), "Optional but improves cover letter quality"))
-    add_category("Profile Basics", basics)
+    basics.append(check("Cover letter style notes", bool(profile.cover_letter_template), "Optional but improves cover letter quality", "scroll:f-cover-template"))
+    add_profile_category("Profile Basics", basics)
 
-    # ── Profile Quality ────────────────────────────────────────────────
+    # ── Profile Quality (Profile Readiness) ────────────────────────────
     quality = []
     summary = profile.profile_summary or ""
-    quality.append(check("Profile summary", len(summary) > 50, f"{len(summary)} chars" if summary else "Run AI analysis to generate"))
+    quality.append(check("Profile summary", len(summary) > 50, f"{len(summary)} chars" if summary else "Run AI analysis to generate", "run:analyzeProfile"))
 
-    quality.append(check("Career trajectory", bool(profile.career_trajectory), "Defined" if profile.career_trajectory else "Run AI analysis to generate"))
+    quality.append(check("Career trajectory", bool(profile.career_trajectory), "Defined" if profile.career_trajectory else "Run AI analysis to generate", "run:analyzeProfile"))
 
-    quality.append(check("Leadership style", bool(profile.leadership_style), "Defined" if profile.leadership_style else "Run AI analysis to generate"))
+    quality.append(check("Leadership style", bool(profile.leadership_style), "Defined" if profile.leadership_style else "Run AI analysis to generate", "run:analyzeProfile"))
 
     strengths = _safe_json(profile.strengths, [])
-    quality.append(check("Strengths identified (3+)", len(strengths) >= 3, f"{len(strengths)} strengths" if strengths else "Run AI analysis to generate"))
+    quality.append(check("Strengths identified (3+)", len(strengths) >= 3, f"{len(strengths)} strengths" if strengths else "Run AI analysis to generate", "run:analyzeProfile"))
 
     industries = _safe_json(profile.industry_preferences, [])
-    quality.append(check("Industry preference", len(industries) >= 1, f"{len(industries)} industries" if industries else "Run AI analysis or add manually"))
+    quality.append(check("Industry preference", len(industries) >= 1, f"{len(industries)} industries" if industries else "Run AI analysis or add manually", "scroll:reporter-question"))
 
-    quality.append(check("Seniority level set", bool(profile.seniority_level), profile.seniority_level or "Run AI analysis to determine"))
-    add_category("Profile Quality", quality)
+    quality.append(check("Seniority level set", bool(profile.seniority_level), profile.seniority_level or "Run AI analysis to determine", "scroll:reporter-question"))
+    add_profile_category("Profile Quality", quality)
 
-    # ── Search Strategy ────────────────────────────────────────────────
+    # ── Search Strategy (Search Performance) ───────────────────────────
     strategy = []
 
     # Check if user has performed at least one search (has any jobs)
     job_count = db.query(Job).filter(Job.profile_id == profile_id).count()
-    strategy.append(check("Performed a job search", job_count > 0, f"{job_count} jobs found" if job_count > 0 else "Search for jobs to start"))
+    strategy.append(check("Performed a job search", job_count > 0, f"{job_count} jobs found" if job_count > 0 else "Search for jobs to start", "run:searchJobs"))
 
     # Has reviewed AI advisor (check if profile_analyzed, which is set after analysis)
-    strategy.append(check("AI advisor reviewed", bool(profile.profile_analyzed), "Analysis complete" if profile.profile_analyzed else "Get AI analysis from Summary > AI Advisor"))
+    strategy.append(check("AI advisor reviewed", bool(profile.profile_analyzed), "Analysis complete" if profile.profile_analyzed else "Get AI analysis from Summary > AI Advisor", "view:bullpen"))
 
     # Has at least 5 jobs scored above 60
     high_score_count = db.query(Job).filter(
         Job.profile_id == profile_id,
         Job.match_score >= 60
     ).count()
-    strategy.append(check("5+ strong matches (score 60+)", high_score_count >= 5, f"{high_score_count} jobs above 60" if high_score_count > 0 else "Search and score more jobs"))
+    strategy.append(check("5+ strong matches (score 60+)", high_score_count >= 5, f"{high_score_count} jobs above 60" if high_score_count > 0 else "Search and score more jobs", "run:searchJobs"))
 
     # Salary expectations set
-    strategy.append(check("Salary expectations set", bool(profile.min_salary and profile.min_salary > 0), f"${profile.min_salary:,}+" if profile.min_salary else "Set minimum salary"))
+    strategy.append(check("Salary expectations set", bool(profile.min_salary and profile.min_salary > 0), f"${profile.min_salary:,}+" if profile.min_salary else "Set minimum salary", "scroll:f-min-salary"))
 
     # Location preferences
     locations = _safe_json(profile.target_locations, [])
-    strategy.append(check("Location preferences set", len(locations) >= 1, f"{len(locations)} locations" if locations else "Add target locations"))
+    strategy.append(check("Location preferences set", len(locations) >= 1, f"{len(locations)} locations" if locations else "Add target locations", "scroll:f-locations-input"))
 
     # Remote preference is intentional
-    strategy.append(check("Remote preference set", profile.remote_preference and profile.remote_preference != "any", profile.remote_preference or "Set a specific preference"))
-    add_category("Search Strategy", strategy)
+    strategy.append(check("Remote preference set", profile.remote_preference and profile.remote_preference != "any", profile.remote_preference or "Set a specific preference", "scroll:f-remote"))
+    add_search_category("Search Strategy", strategy)
 
-    # ── Application Quality ────────────────────────────────────────────
+    # ── Application Quality (Search Performance) ──────────────────────
     app_quality = []
 
     # Resume recency (uploaded in last 90 days)
@@ -2924,7 +2934,7 @@ def get_apply_readiness(profile_id: int, db: Session = Depends(get_db)):
         days_old = (datetime.utcnow() - profile.updated_at).days
         resume_recent = days_old <= 90
         resume_detail = f"Updated {days_old} days ago" if resume_recent else f"Last updated {days_old} days ago - consider refreshing"
-    app_quality.append(check("Resume is recent (90 days)", resume_recent, resume_detail))
+    app_quality.append(check("Resume is recent (90 days)", resume_recent, resume_detail, "scroll:resume-drop-zone"))
 
     # Skills match market demand (check if skills overlap with job requirements)
     skills_in_demand = False
@@ -2942,7 +2952,7 @@ def get_apply_readiness(profile_id: int, db: Session = Depends(get_db)):
         pct = int(skill_hits / len(skills) * 100) if skills else 0
         skills_in_demand = pct >= 50
         skills_detail = f"{skill_hits}/{len(skills)} skills found in job listings ({pct}%)"
-    app_quality.append(check("Skills match market demand", skills_in_demand, skills_detail))
+    app_quality.append(check("Skills match market demand", skills_in_demand, skills_detail, "run:searchJobs"))
 
     # Target roles are realistic (jobs actually exist for them)
     roles_realistic = False
@@ -2958,25 +2968,42 @@ def get_apply_readiness(profile_id: int, db: Session = Depends(get_db)):
                 role_match_count += 1
         roles_realistic = role_match_count > 0
         roles_detail = f"{role_match_count}/{len(roles)} target roles found in listings" if role_match_count > 0 else "No matching jobs found - consider broadening"
-    app_quality.append(check("Target roles match market", roles_realistic, roles_detail))
-    add_category("Application Quality", app_quality)
+    app_quality.append(check("Target roles match market", roles_realistic, roles_detail, "scroll:f-roles-input"))
+    add_search_category("Application Quality", app_quality)
 
     # ── Aggregate ──────────────────────────────────────────────────────
-    all_checks = []
-    for cat in categories:
-        all_checks.extend(cat["checks"])
+    profile_checks = []
+    for cat in profile_categories:
+        profile_checks.extend(cat["checks"])
 
-    passed = sum(1 for c in all_checks if c["passed"])
-    total = len(all_checks)
-    score = int((passed / total) * 100) if total > 0 else 0
+    search_checks = []
+    for cat in search_categories:
+        search_checks.extend(cat["checks"])
+
+    profile_passed = sum(1 for c in profile_checks if c["passed"])
+    profile_total = len(profile_checks)
+    profile_score = round(profile_passed / profile_total * 100) if profile_total else 0
+
+    search_passed = sum(1 for c in search_checks if c["passed"])
+    search_total = len(search_checks)
+    search_score = round(search_passed / search_total * 100) if search_total else 0
 
     return {
-        "score": score,
-        "passed": passed,
-        "total": total,
-        "ready": score >= 70,
-        "categories": categories,
-        "checks": all_checks,  # backward compat
+        "profile_score": profile_score,
+        "profile_passed": profile_passed,
+        "profile_total": profile_total,
+        "search_score": search_score,
+        "search_passed": search_passed,
+        "search_total": search_total,
+        "has_searched": job_count > 0,
+        "ready": profile_score >= 70,
+        "profile_categories": profile_categories,
+        "search_categories": search_categories,
+        # backward compat
+        "score": profile_score,
+        "passed": profile_passed + search_passed,
+        "total": profile_total + search_total,
+        "categories": profile_categories + search_categories,
     }
 
 

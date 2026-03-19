@@ -2420,6 +2420,49 @@ body::before {
     font-family: var(--mono);
 }
 
+/* Readiness Tiers */
+.readiness-tier { margin-bottom: 8px; border: 1px solid var(--jb-border); border-radius: 8px; overflow: hidden; }
+.readiness-tier-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; cursor: pointer; background: var(--jb-bg-secondary); }
+.readiness-tier-header:hover { background: var(--jb-bg-tertiary, rgba(255,255,255,.03)); }
+.readiness-tier-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.readiness-tier-score { font-size: 13px; font-weight: 600; margin-left: auto; margin-right: 8px; }
+.readiness-tier-chevron { font-size: 10px; transition: transform 0.2s; }
+.readiness-tier-chevron.rotated { transform: rotate(-90deg); }
+.readiness-tier-body { padding: 4px 0; }
+.readiness-tier-body.collapsed { display: none; }
+.readiness-tier-locked { opacity: 0.6; }
+.readiness-locked-header { cursor: default; }
+.readiness-locked-msg { font-size: 12px; color: var(--jb-text-dim); font-style: italic; padding: 12px 14px; }
+.readiness-tier-badge { font-size: 10px; background: var(--jb-bg-tertiary); color: var(--jb-text-dim); padding: 2px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.readiness-check { display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-size: 13px; }
+.readiness-check.check-fail { cursor: pointer; }
+.readiness-check.check-fail:hover { background: rgba(255,255,255,.02); }
+.check-icon { width: 16px; text-align: center; font-size: 12px; }
+.check-pass .check-icon { color: #4CAF50; }
+.check-fail .check-icon { color: #EF5350; }
+.check-name { font-weight: 500; }
+.check-fail .check-name { font-weight: 600; }
+.check-detail { margin-left: auto; font-size: 12px; color: var(--jb-text-dim); }
+
+@keyframes readiness-pulse { 0%, 100% { box-shadow: none; } 50% { box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.4); } }
+.readiness-highlight { animation: readiness-pulse 0.6s ease 3; border-radius: 4px; }
+
+/* Clubhouse Card */
+.clubhouse-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.clubhouse-badge { font-size: 11px; background: var(--jb-bg-tertiary); color: var(--jb-text-2); padding: 2px 10px; border-radius: 12px; }
+.clubhouse-badge-green { color: #4CAF50; border: 1px solid rgba(76,175,80,.3); }
+.clubhouse-section { margin-bottom: 10px; }
+.clubhouse-section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--jb-text-dim); margin-bottom: 4px; }
+.clubhouse-pulse-stat { font-size: 12px; color: var(--jb-text-2); }
+.clubhouse-pulse-top { font-size: 13px; color: var(--jb-text-1); margin-top: 4px; }
+.clubhouse-score { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 8px; background: rgba(74,144,217,.15); color: #4A90D9; margin-left: 4px; }
+.clubhouse-tuneup { font-size: 12px; padding: 8px 10px; background: var(--jb-bg-tertiary); border-radius: 6px; border-left: 2px solid #FFA726; color: var(--jb-text-2); }
+.clubhouse-empty { font-size: 12px; color: var(--jb-text-dim); font-style: italic; }
+.clubhouse-footer { text-align: center; padding-top: 8px; border-top: 1px solid var(--jb-border); margin-top: 12px; }
+.clubhouse-reanswer { font-size: 11px; color: var(--jb-text-dim); text-decoration: none; }
+.clubhouse-reanswer:hover { text-decoration: underline; color: var(--jb-text-2); }
+
 /* ── Hidden toggle & Automation steps ── */
 .hidden-toggle {
     text-align: center;
