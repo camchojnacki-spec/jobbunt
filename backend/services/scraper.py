@@ -1638,8 +1638,8 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
     """
     global _serpapi_call_count
     _serpapi_call_count += 1
-    if _serpapi_call_count > 10:
-        logger.info(f"SerpAPI: skipping call #{_serpapi_call_count} (max 10 per session to preserve quota)")
+    if _serpapi_call_count > 20:
+        logger.info(f"SerpAPI: skipping call #{_serpapi_call_count} (max 20 per session to preserve quota)")
         return []
 
     api_key = os.environ.get("SERPAPI_KEY", "") or _get_source_config().get("serpapi", {}).get("api_key", "")
@@ -1675,7 +1675,7 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
             for page_start in [0, 10]:
                 if page_start > 0:
                     _serpapi_call_count += 1
-                    if _serpapi_call_count > 10:
+                    if _serpapi_call_count > 20:
                         logger.info("SerpAPI: skipping page 2 (quota limit)")
                         break
                 params = {

@@ -1245,12 +1245,14 @@ function renderBrowseView() {
 
     const allJobs = state.swipeStack;
     const filterBar = document.getElementById('job-filter-bar');
+    // Always show toolbar so Search/Dispatch controls are accessible
+    toolbar.style.display = 'flex';
+
     if (!allJobs || allJobs.length === 0) {
         listView.style.display = 'none';
         gridView.style.display = 'none';
         feed.style.display = 'none';
         actionBar.style.display = 'none';
-        toolbar.style.display = 'none';
         if (filterBar) filterBar.style.display = 'none';
         // Show contextual empty state
         const stLevel = typeof getSpringTrainingLevel === 'function' ? getSpringTrainingLevel() : null;
