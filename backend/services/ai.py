@@ -19,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 GEMINI_MODELS = {
     "flash":    "gemini-2.5-flash-lite",
-    "balanced": "gemini-3.1-flash",
-    "deep":     "gemini-3.1-pro-preview",
+    "balanced": "gemini-2.5-flash",
+    "deep":     "gemini-2.5-pro",
     # Legacy aliases
     "fast":     "gemini-2.5-flash-lite",
-    "smart":    "gemini-3.1-flash",
+    "smart":    "gemini-2.5-flash",
 }
 
 ANTHROPIC_MODELS = {
