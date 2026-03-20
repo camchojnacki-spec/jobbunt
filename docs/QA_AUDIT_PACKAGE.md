@@ -249,29 +249,54 @@
 
 | Baseball Term | Career Equivalent | Where Used |
 |---------------|-------------------|------------|
-| Dugout / Home | Dashboard/Home | Main navigation tab |
-| Scouting / Jobs | Job Browse & Search | Main navigation tab |
-| Spring Training | Progressive Onboarding | Home view — 5-level system |
-| The Climb | Onboarding progression | Spring Training alt name |
-| Rookie → The Show | Beginner → Full Access | Spring Training levels |
-| Reporter Corner | Profile Q&A / Interview | Home view — AI-generated questions |
-| Batting Cage | Resume Improvement Lab | Home/Profile view |
-| Equipment Check | Resume Analysis | Tools sub-tab |
-| Batting Practice | Skills Audit | Tools sub-tab |
-| Coaching Staff | Search Strategy Advisor | Tools sub-tab |
-| Pregame | Profile Deep Analysis | Tools sub-tab |
-| Scoreboard | Market Intelligence | Tools sub-tab |
-| Box Score | Analytics Dashboard | Home view — funnel metrics |
-| Prospects / Pipeline | Saved & Applied Jobs | Jobs sub-tab |
-| Bullpen / Tools | AI Analysis Tools | Main navigation tab |
-| Warm-Up | Interview Preparation | Job card action |
-| Scouting Report | AI Career Assessment | Profile — narrative evaluation |
-| Baseball Card | Career Summary Card | Home view — visual stat card |
-| Walk-Up Song | Elevator Pitch | Planned (not implemented) |
-| Farm System | Skills Development | Planned (not implemented) |
-| Double Play | Company Comparison | Planned (not implemented) |
-| Seventh Inning Stretch | Weekly Digest | Planned (not implemented) |
-| Coach's Note | Contextual AI Tip | Home view — dynamic guidance |
+| **Dugout** | Dashboard / Home | Home view, nav alias |
+| **Scouting** | Job searching across boards | Nav alias for Jobs |
+| **Spring Training / The Climb** | Profile completeness progression | Dashboard, 5 levels |
+| **Rookie Ball** | Level 1: Resume uploaded | Spring Training |
+| **Single-A** | Level 2: Basic info complete | Spring Training |
+| **Double-A** | Level 3: AI analysis + salary/seniority | Spring Training |
+| **Triple-A** | Level 4: Preferences set | Spring Training |
+| **The Majors / The Show** | Level 5: Fully ready | Spring Training |
+| **Reporter Corner** | Guided onboarding Q&A (pre-game interview) | Dashboard, slide-up panel |
+| **The Clubhouse** | Post-completion state | Reporter Corner final state |
+| **Coach's Note** | AI contextual guidance | Dashboard section |
+| **Player Card / Baseball Card** | User profile summary card | Dashboard visual |
+| **Prospects** | Shortlisted jobs | Jobs sub-tab |
+| **Dispatch Scout** | Indeed browser automation agent | Jobs/Settings |
+| **Box Score** | Analytics dashboard | Dashboard section |
+| **Season Stats** | Summary metrics row | Dashboard section |
+| **At Bats (AB)** | Total jobs reviewed | Box Score / Season Stats |
+| **Hits (H)** | Jobs liked/applied to | Box Score / Season Stats |
+| **Batting Average (AVG)** | Like/apply rate | Box Score |
+| **Base on Balls (BB)** | Jobs shortlisted | Box Score |
+| **Strikeouts (K)** | Jobs passed on | Box Score |
+| **On-Base Percentage (OBP)** | Engagement rate | Box Score |
+| **Slugging (SLG)** | Quality engagement metric | Box Score |
+| **OPS** | Combined effectiveness | Box Score |
+| **On Deck** | Jobs waiting for review | Season Stats |
+| **On Base** | Active interviews/applications | Season Stats |
+| **Pregame Report** | Analysis overview hub | Tools sub-tab |
+| **Scoreboard** | Search intelligence / market stats | Tools sub-tab |
+| **Coaching Staff** | AI strategy advisor | Tools sub-tab |
+| **Batting Practice** | Skills gap analysis | Tools sub-tab |
+| **Equipment Check** | Resume optimization/analysis | Tools sub-tab |
+| **Batting Cage** | Resume improvement tool | Profile section |
+| **Bullpen** | Tools view | Nav alias |
+| **Warm-Up** | Interview prep (STAR framework) | Per-job action |
+| **Home Field** | User's location | Profile field |
+| **Game Day Gear** | Application materials (resume, cover letter) | Profile section |
+| **Scouting Networks** | Job board sources | Profile section |
+| **Free Agent** | User with no target roles set | Coach Note context |
+| **Pipeline** | Application tracking stages | Jobs Applied sub-tab |
+| **What Position Are You Playing?** | Target role/job preferences | Profile section |
+| **The Basics** | Core contact info | Profile section |
+| **Dry Run** | Test mode for applications | Settings toggle |
+| **Prompt Lab** | AI prompt editor | Settings admin tool |
+| **Danger Zone** | Destructive admin actions | Settings section |
+| Walk-Up Song | Elevator Pitch | *Planned (not implemented)* |
+| Farm System | Skills Development | *Planned (not implemented)* |
+| Double Play | Company Comparison | *Planned (not implemented)* |
+| Seventh Inning Stretch | Weekly Digest | *Planned (not implemented)* |
 
 ## Engagement/Retention Mechanisms
 
