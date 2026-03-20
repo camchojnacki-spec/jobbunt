@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Qu
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, SessionLocal
-from backend.models.models import Job, Application, Profile, Company, ProfileQuestion, User
+from backend.models.models import Job, Application, Profile, Company, ProfileQuestion, User, Document, Interview
 from backend.auth import get_optional_user
 from backend.services.ai import ai_generate, ai_generate_json, get_provider
 from backend.services.enrichment import enrich_company
@@ -1445,3 +1445,197 @@ def _extract_company_from_email(from_addr: str, subject: str) -> Optional[str]:
         return at_match.group(1).strip()
 
     return None
+
+
+# ── Resume Tailoring ─────────────────────────────────────────────────────
+
+@router.post("/jobs/{job_id}/tailor-resume")
+async def tailor_resume(job_id: int, db: Session = Depends(get_db)):
+    """Generate a tailored resume optimized for a specific job."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    profile = db.query(Profile).filter(Profile.id == job.profile_id).first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    resume_text = profile.resume_text or profile.raw_profile_doc or ""
+    if not resume_text:
+        raise HTTPException(400, "No resume text found. Upload a resume first.")
+
+    skills = safe_json_list(profile.skills)
+    career_history = safe_json(profile.career_history, [])
+    profile_summary = profile.profile_summary or ""
+
+    prompt = f"""You are an expert resume writer. Tailor this resume for the specific job below.
+
+ORIGINAL RESUME:
+{resume_text}
+
+CANDIDATE SKILLS: {json.dumps(skills)}
+CAREER HISTORY: {json.dumps(career_history)}
+CANDIDATE SUMMARY: {profile_summary}
+
+TARGET JOB:
+Title: {job.title}
+Company: {job.company}
+Description: {job.description or 'Not available'}
+Requirements: {job.requirements or 'Not specified'}
+
+Instructions:
+1. Rewrite the professional summary to align with this specific role
+2. Reorder experience sections to highlight the most relevant roles first
+3. Rewrite bullet points to emphasize skills and achievements that match the job requirements
+4. Ensure all relevant skills from the candidate's profile that match the job are prominently featured
+5. Remove or de-emphasize experience that is not relevant to this role
+6. Keep the resume truthful — do not fabricate experience, only reframe and emphasize existing experience
+7. Maintain professional formatting with clear sections
+
+Return ONLY the tailored resume text, no commentary."""
+
+    content = await ai_generate(prompt, max_tokens=3000, model_tier="deep")
+    if not content:
+        raise HTTPException(500, "AI generation failed. Try again.")
+
+    # Determine version number
+    existing_count = db.query(Document).filter(
+        Document.profile_id == profile.id,
+        Document.job_id == job.id,
+        Document.doc_type == "tailored_resume",
+    ).count()
+
+    doc = Document(
+        profile_id=profile.id,
+        job_id=job.id,
+        doc_type="tailored_resume",
+        version=existing_count + 1,
+        title=f"Tailored Resume - {job.title} at {job.company}",
+        content=content,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    return {
+        "tailored_resume": content,
+        "document_id": doc.id,
+        "changes_summary": f"Resume tailored for {job.title} at {job.company} (v{doc.version})",
+    }
+
+
+# ── Interview Prep (Warm-Up) ────────────────────────────────────────────
+
+@router.post("/jobs/{job_id}/interview-prep")
+async def interview_prep(job_id: int, db: Session = Depends(get_db)):
+    """Generate interview preparation materials for a specific job."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    profile = db.query(Profile).filter(Profile.id == job.profile_id).first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    # Gather company data
+    company_name = job.company or "Unknown"
+    culture_insights = ""
+    if job.company_id:
+        company = db.query(Company).filter(Company.id == job.company_id).first()
+        if company:
+            culture_insights = company.culture_summary or ""
+
+    # Also pull job-level culture insights from deep research
+    if not culture_insights and job.culture_insights:
+        culture_insights = job.culture_insights
+
+    # Profile data
+    profile_summary = profile.profile_summary or ""
+    skills = safe_json_list(profile.skills)
+    strengths = safe_json_list(profile.strengths)
+    career_history = safe_json(profile.career_history, [])
+    red_flags = safe_json_list(job.red_flags)
+    match_reasons = safe_json_list(job.match_reasons)
+
+    prompt = f"""You are an expert interview coach. Generate interview preparation materials for this candidate and job.
+
+CANDIDATE PROFILE:
+Summary: {profile_summary}
+Skills: {json.dumps(skills)}
+Strengths: {json.dumps(strengths)}
+Career History: {json.dumps(career_history)}
+
+TARGET JOB:
+Title: {job.title} at {company_name}
+Description: {job.description or 'Not available'}
+Requirements: {job.requirements or 'Not specified'}
+Company Culture: {culture_insights or 'Unknown'}
+Match Reasons: {json.dumps(match_reasons)}
+Red Flags: {json.dumps(red_flags)}
+
+Generate a JSON response with this structure:
+{{
+  "behavioral_questions": [
+    {{
+      "question": "Tell me about a time when...",
+      "why_asked": "They want to assess...",
+      "star_framework": {{
+        "situation": "Draw from your experience at [specific company/role from career history]...",
+        "task": "Your responsibility was...",
+        "action": "Emphasize how you...",
+        "result": "Quantify the outcome..."
+      }}
+    }}
+  ],
+  "technical_questions": [
+    {{
+      "question": "How would you approach...",
+      "talking_points": ["Point 1 drawing from their skills", "Point 2", "Point 3"]
+    }}
+  ],
+  "questions_to_ask": [
+    {{
+      "question": "What does success look like in the first 90 days?",
+      "why_good": "Shows you're thinking about impact and alignment"
+    }}
+  ],
+  "key_talking_points": ["Point about relevant experience", "Point about matching skill"],
+  "preparation_tips": ["Research the company's recent...", "Review your experience with..."]
+}}
+
+Generate exactly 5 behavioral questions with STAR frameworks personalized to the candidate's career history.
+Generate exactly 5 technical/role-specific questions with answer talking points.
+Generate exactly 3 questions the candidate should ask the interviewer.
+Generate 4-6 key talking points that connect the candidate's experience to this role.
+Generate 3-5 preparation tips.
+
+Return ONLY valid JSON, no other text."""
+
+    result = await ai_generate_json(prompt, max_tokens=4000, model_tier="deep")
+    if not result:
+        raise HTTPException(500, "AI generation failed. Try again.")
+
+    # Save prep content to user_notes (append, don't overwrite)
+    prep_summary = f"\n\n--- Interview Prep (generated) ---\nBehavioral Qs: {len(result.get('behavioral_questions', []))}, Technical Qs: {len(result.get('technical_questions', []))}"
+    existing_notes = job.user_notes or ""
+    if "--- Interview Prep (generated) ---" not in existing_notes:
+        job.user_notes = (existing_notes + prep_summary).strip()
+
+    # If application exists, also save to an Interview record
+    application = db.query(Application).filter(
+        Application.job_id == job.id,
+        Application.profile_id == profile.id,
+    ).first()
+    if application:
+        interview = Interview(
+            application_id=application.id,
+            profile_id=profile.id,
+            interview_type="behavioral",
+            prep_notes=json.dumps(result),
+            outcome="pending",
+        )
+        db.add(interview)
+
+    db.commit()
+
+    return result

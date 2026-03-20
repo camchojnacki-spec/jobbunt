@@ -1972,6 +1972,24 @@ function buildJobCard(job) {
         </div>`;
     }
 
+    // ── Tailor Resume & Warm-Up ──
+    if (job.match_score >= 40) {
+        html += `<div class="card-section" style="text-align:center;padding:10px 24px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+            <div>
+                <button class="btn btn-secondary btn-sm" onclick="tailorResume(${job.id}, '${esc(job.title).replace(/'/g, "\\'")}', '${esc(job.company).replace(/'/g, "\\'")}')" id="tailor-resume-btn-${job.id}">
+                    📝 Tailor Resume
+                </button>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Optimize resume for this role</div>
+            </div>
+            <div>
+                <button class="btn btn-secondary btn-sm" onclick="interviewPrep(${job.id}, '${esc(job.title).replace(/'/g, "\\'")}', '${esc(job.company).replace(/'/g, "\\'")}')" id="interview-prep-btn-${job.id}">
+                    🎯 Warm-Up
+                </button>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Interview prep & STAR frameworks</div>
+            </div>
+        </div>`;
+    }
+
     // ── Links ──
     if (job.url) {
         html += `<div class="card-links">
@@ -3758,6 +3776,188 @@ async function triggerDeepResearch(jobId) {
     }
 }
 
+// ── Resume Tailoring ────────────────────────────────────────────────────
+
+let _tailoredResumeContent = '';
+let _tailoredResumeTitle = '';
+
+async function tailorResume(jobId, jobTitle, companyName) {
+    const btn = document.getElementById(`tailor-resume-btn-${jobId}`);
+    if (btn) setButtonLoading(btn, true);
+    toast('Tailoring resume... this may take a moment', 'info');
+    try {
+        const result = await api(`/jobs/${jobId}/tailor-resume`, { method: 'POST' });
+        toast(result.changes_summary || 'Resume tailored!', 'success');
+        showTailoredResumeModal(result.tailored_resume, `${jobTitle} at ${companyName}`);
+    } catch (e) {
+        toast('Resume tailoring failed: ' + e.message, 'error');
+    } finally {
+        if (btn) setButtonLoading(btn, false);
+    }
+}
+
+function showTailoredResumeModal(content, jobTitle) {
+    _tailoredResumeContent = content;
+    _tailoredResumeTitle = jobTitle;
+
+    // Remove existing modal if any
+    document.getElementById('tailored-resume-modal')?.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'tailored-resume-modal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:700px;max-height:85vh;overflow-y:auto;background:var(--jb-bg-secondary);border:1px solid var(--jb-border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--jb-border)">
+                <h3 style="margin:0;font-size:16px;color:var(--jb-text-1)">Tailored Resume — ${esc(jobTitle)}</h3>
+                <button onclick="closeTailoredResumeModal()" style="background:none;border:none;color:var(--jb-text-2);font-size:22px;cursor:pointer;padding:0 4px">&times;</button>
+            </div>
+            <div style="white-space:pre-wrap;font-family:var(--jb-font);font-size:13px;line-height:1.6;padding:20px;color:var(--jb-text-1)">${esc(content)}</div>
+            <div style="display:flex;gap:8px;padding:16px 20px;border-top:1px solid var(--jb-border)">
+                <button onclick="copyTailoredResume()" class="btn btn-primary btn-sm">Copy to Clipboard</button>
+                <button onclick="downloadTailoredResume()" class="btn btn-secondary btn-sm">Download</button>
+            </div>
+        </div>`;
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeTailoredResumeModal();
+    });
+    document.body.appendChild(modal);
+}
+
+function closeTailoredResumeModal() {
+    document.getElementById('tailored-resume-modal')?.remove();
+}
+
+function copyTailoredResume() {
+    copyToClipboard(_tailoredResumeContent);
+}
+
+function downloadTailoredResume() {
+    const blob = new Blob([_tailoredResumeContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Tailored_Resume_${_tailoredResumeTitle.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('Resume downloaded', 'success');
+}
+
+// ── Interview Prep (Warm-Up) ────────────────────────────────────────────
+
+async function interviewPrep(jobId, jobTitle, companyName) {
+    const btn = document.getElementById(`interview-prep-btn-${jobId}`);
+    if (btn) setButtonLoading(btn, true);
+    toast('Generating interview prep... this may take a moment', 'info');
+    try {
+        const result = await api(`/jobs/${jobId}/interview-prep`, { method: 'POST' });
+        toast('Interview prep ready!', 'success');
+        showInterviewPrepModal(result, `${jobTitle} at ${companyName}`);
+    } catch (e) {
+        toast('Interview prep failed: ' + e.message, 'error');
+    } finally {
+        if (btn) setButtonLoading(btn, false);
+    }
+}
+
+function showInterviewPrepModal(data, jobTitle) {
+    // Remove existing modal if any
+    document.getElementById('interview-prep-modal')?.remove();
+
+    let html = '';
+
+    // Behavioral Questions
+    const behavioral = data.behavioral_questions || [];
+    if (behavioral.length > 0) {
+        html += '<h4 style="color:var(--jb-bright);margin:0 0 12px 0">Behavioral Questions</h4>';
+        for (const q of behavioral) {
+            html += `<div class="prep-question">
+                <p class="prep-q-text"><strong>${esc(q.question)}</strong></p>
+                <p class="prep-q-why"><em>${esc(q.why_asked || '')}</em></p>
+                <details>
+                    <summary style="cursor:pointer;color:var(--jb-bright)">STAR Framework</summary>
+                    <div class="star-framework">
+                        <div><strong>S</strong>ituation: ${esc(q.star_framework?.situation || '')}</div>
+                        <div><strong>T</strong>ask: ${esc(q.star_framework?.task || '')}</div>
+                        <div><strong>A</strong>ction: ${esc(q.star_framework?.action || '')}</div>
+                        <div><strong>R</strong>esult: ${esc(q.star_framework?.result || '')}</div>
+                    </div>
+                </details>
+            </div>`;
+        }
+    }
+
+    // Technical Questions
+    const technical = data.technical_questions || [];
+    if (technical.length > 0) {
+        html += '<h4 style="color:var(--jb-bright);margin:20px 0 12px 0">Technical / Role-Specific Questions</h4>';
+        for (const q of technical) {
+            html += `<div class="prep-question">
+                <p class="prep-q-text"><strong>${esc(q.question)}</strong></p>
+                <ul style="margin:8px 0 0 16px;color:var(--jb-text-1);font-size:13px;line-height:1.6">
+                    ${(q.talking_points || []).map(p => `<li>${esc(p)}</li>`).join('')}
+                </ul>
+            </div>`;
+        }
+    }
+
+    // Questions to Ask
+    const questionsToAsk = data.questions_to_ask || [];
+    if (questionsToAsk.length > 0) {
+        html += '<h4 style="color:var(--jb-bright);margin:20px 0 12px 0">Questions to Ask the Interviewer</h4>';
+        for (const q of questionsToAsk) {
+            html += `<div class="prep-question">
+                <p class="prep-q-text"><strong>${esc(q.question)}</strong></p>
+                <p class="prep-q-why"><em>${esc(q.why_good || '')}</em></p>
+            </div>`;
+        }
+    }
+
+    // Key Talking Points
+    const talkingPoints = data.key_talking_points || [];
+    if (talkingPoints.length > 0) {
+        html += '<h4 style="color:var(--jb-bright);margin:20px 0 12px 0">Key Talking Points</h4>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+        for (const p of talkingPoints) {
+            html += `<span style="background:var(--jb-bg-tertiary);border:1px solid var(--jb-border);border-radius:16px;padding:6px 12px;font-size:12px;color:var(--jb-text-1);line-height:1.4">${esc(p)}</span>`;
+        }
+        html += '</div>';
+    }
+
+    // Preparation Tips
+    const tips = data.preparation_tips || [];
+    if (tips.length > 0) {
+        html += '<h4 style="color:var(--jb-bright);margin:20px 0 12px 0">Preparation Tips</h4>';
+        html += '<ul style="margin:0 0 0 16px;color:var(--jb-text-1);font-size:13px;line-height:1.8">';
+        for (const t of tips) {
+            html += `<li>${esc(t)}</li>`;
+        }
+        html += '</ul>';
+    }
+
+    const modal = document.createElement('div');
+    modal.id = 'interview-prep-modal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:750px;max-height:85vh;overflow-y:auto;background:var(--jb-bg-secondary);border:1px solid var(--jb-border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--jb-border)">
+                <h3 style="margin:0;font-size:16px;color:var(--jb-text-1)">🎯 Warm-Up: ${esc(jobTitle)}</h3>
+                <button onclick="closeInterviewPrepModal()" style="background:none;border:none;color:var(--jb-text-2);font-size:22px;cursor:pointer;padding:0 4px">&times;</button>
+            </div>
+            <div style="padding:16px 20px">${html}</div>
+        </div>`;
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeInterviewPrepModal();
+    });
+    document.body.appendChild(modal);
+}
+
+function closeInterviewPrepModal() {
+    document.getElementById('interview-prep-modal')?.remove();
+}
+
 async function deepResearchShortlist() {
     if (!state.profileId) return;
     // Spring Training gate: require Double-A
@@ -4132,6 +4332,8 @@ async function loadShortlist() {
                 <div class="sl-actions">
                     <button class="btn btn-sm btn-primary" onclick="applyFromShortlist(${job.id})">Apply</button>
                     ${!job.deep_researched ? `<button class="btn btn-sm btn-secondary" onclick="triggerDeepResearch(${job.id})" id="deep-research-btn-${job.id}">🔬 Research</button>` : '<span class="sl-researched">🔬 Researched</span>'}
+                    <button class="btn btn-sm btn-secondary" onclick="tailorResume(${job.id}, '${esc(job.title).replace(/'/g, "\\'")}', '${esc(job.company).replace(/'/g, "\\'")}')" id="tailor-resume-btn-${job.id}">📝 Tailor</button>
+                    <button class="btn btn-sm btn-secondary" onclick="interviewPrep(${job.id}, '${esc(job.title).replace(/'/g, "\\'")}', '${esc(job.company).replace(/'/g, "\\'")}')" id="interview-prep-btn-${job.id}">🎯 Warm-Up</button>
                     <button class="btn btn-sm btn-secondary" onclick="removeFromShortlist(${job.id})">Remove</button>
                     ${job.url ? `<a href="${esc(job.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">View</a>` : ''}
                 </div>
@@ -4651,6 +4853,14 @@ window.toggleAnswered = toggleAnswered;
 window.dedupJobs = dedupJobs;
 window.autoApply = autoApply;
 window.triggerDeepResearch = triggerDeepResearch;
+window.tailorResume = tailorResume;
+window.showTailoredResumeModal = showTailoredResumeModal;
+window.closeTailoredResumeModal = closeTailoredResumeModal;
+window.copyTailoredResume = copyTailoredResume;
+window.downloadTailoredResume = downloadTailoredResume;
+window.interviewPrep = interviewPrep;
+window.showInterviewPrepModal = showInterviewPrepModal;
+window.closeInterviewPrepModal = closeInterviewPrepModal;
 window.deepResearchShortlist = deepResearchShortlist;
 window.loadInsights = loadInsights;
 window.toggleResearchDetail = toggleResearchDetail;
