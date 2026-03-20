@@ -6532,3 +6532,33 @@ select:focus {
     color: var(--jb-text-3);
     font-style: italic;
 }
+
+/* ── Jobs Sub-tabs ── */
+.jobs-sub-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--jb-border);
+    margin-bottom: 16px;
+    padding: 0 16px;
+}
+.jobs-sub-tab {
+    flex: 1;
+    padding: 10px 16px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--jb-text-2);
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+}
+.jobs-sub-tab:hover {
+    color: var(--jb-text-1);
+}
+.jobs-sub-tab.active {
+    color: var(--jb-bright);
+    border-bottom-color: var(--jb-bright);
+}

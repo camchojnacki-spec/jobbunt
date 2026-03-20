@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260319d">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260320a">
     <script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
@@ -42,7 +42,7 @@
         <!-- Top Bar (minimal: logo + activity + avatar) -->
         <nav class="top-bar">
             <div class="nav-brand">
-                <svg width="110" height="24" viewBox="0 0 150 32" onclick="showView('dugout')" style="cursor:pointer">
+                <svg width="110" height="24" viewBox="0 0 150 32" onclick="showView('home')" style="cursor:pointer">
                     <text x="0" y="24" font-family="'Outfit',sans-serif" font-size="28" font-weight="300" fill="#E0E6ED" letter-spacing="-1.2">j</text>
                     <g transform="translate(6,5)">
                         <path d="M10 0 L18 9.5 L10 19 L2 9.5Z" fill="#1D2D5C" stroke="#4A90D9" stroke-width="0.5"/>
@@ -64,7 +64,7 @@
                     </svg>
                     <span class="activity-text" id="activity-text">Working...</span>
                 </div>
-                <div class="search-status-badge" id="search-status-badge" style="display:none" onclick="showView('hunt')" title="Click to view results">
+                <div class="search-status-badge" id="search-status-badge" style="display:none" onclick="showView('jobs')" title="Click to view results">
                     <span class="search-badge-dot"></span>
                     <span class="search-badge-text" id="search-badge-text">Searching...</span>
                     <span class="search-badge-count" id="search-badge-count">0</span>
@@ -88,32 +88,28 @@
 
         <!-- Bottom Tab Bar -->
         <div class="bottom-tabs" id="bottom-tabs">
-            <button class="bottom-tab active" data-view="dugout" onclick="showView('dugout')">
+            <button class="bottom-tab active" data-view="home" onclick="showView('home')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 12h3v8h6v-5h2v5h6v-8h3L12 3z"/></svg>
-                <span>Dugout</span>
+                <span>HOME</span>
             </button>
-            <button class="bottom-tab" data-view="hunt" onclick="showView('hunt')">
+            <button class="bottom-tab" data-view="jobs" onclick="showView('jobs')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
-                <span>Scouting</span>
+                <span>JOBS</span>
             </button>
-            <button class="bottom-tab" data-view="pipeline" onclick="showView('pipeline')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                <span>Prospects</span>
-            </button>
-            <button class="bottom-tab" data-view="intel" onclick="showView('intel')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                <span>Bullpen</span>
+            <button class="bottom-tab" data-view="tools" onclick="showView('tools')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+                <span>TOOLS</span>
             </button>
             <button class="bottom-tab" data-view="profile" onclick="showView('profile')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                <span>Profile</span>
+                <span>PROFILE</span>
             </button>
         </div>
 
         <!-- Main Content -->
         <main class="main page">
-            <!-- ═══ Dugout View (Home/Dashboard) ═══ -->
-            <div class="view active" id="view-dugout" data-view="dugout">
+            <!-- ═══ Home View (Dashboard) ═══ -->
+            <div class="view active" id="view-home" data-view="home">
                 <div class="dugout-container">
                     <!-- Hero Section -->
                     <div class="dugout-hero">
@@ -267,9 +263,18 @@
                 </div>
             </div>
 
-            <!-- ═══ Hunt View (Browse/Search Jobs) ═══ -->
-            <div class="view" id="view-hunt" data-view="hunt">
+            <!-- ═══ Jobs View (Browse/Search + Shortlist + Applications) ═══ -->
+            <div class="view" id="view-jobs" data-view="jobs">
                 <div class="browse-container">
+                    <!-- Jobs sub-tabs -->
+                    <div class="jobs-sub-tabs" id="jobs-sub-tabs">
+                        <button class="jobs-sub-tab active" onclick="switchJobsTab('browse')">Browse</button>
+                        <button class="jobs-sub-tab" onclick="switchJobsTab('shortlist')">Shortlist</button>
+                        <button class="jobs-sub-tab" onclick="switchJobsTab('applied')">Applied</button>
+                    </div>
+
+                    <!-- ── Browse Section ── -->
+                    <div id="jobs-browse-section">
                     <!-- Browse toolbar -->
                     <div class="browse-toolbar" id="browse-toolbar" style="display:none">
                         <div class="browse-toolbar-left">
@@ -374,74 +379,64 @@
                         <p>Set up your profile to start browsing jobs</p>
                         <button class="btn btn-primary" onclick="showView('profile')">Create Profile</button>
                     </div>
-                </div>
-            </div>
+                    </div><!-- end jobs-browse-section -->
 
-            <!-- ═══ Pipeline View (Shortlist + Applications) ═══ -->
-            <div class="view" id="view-pipeline" data-view="pipeline">
-                <div class="pipeline-container">
-                    <div class="pipeline-header">
-                        <h2 class="view-title">Prospects</h2>
-                        <p class="view-subtitle">Track your job search funnel</p>
-                    </div>
+                    <!-- ── Shortlist Section ── -->
+                    <div id="jobs-shortlist-section" style="display:none">
+                        <!-- Funnel summary -->
+                        <div class="pipeline-funnel" id="pipeline-funnel"></div>
 
-                    <!-- Funnel summary -->
-                    <div class="pipeline-funnel" id="pipeline-funnel"></div>
-
-                    <!-- Sub-tabs -->
-                    <div class="pipeline-tabs">
-                        <button class="pipeline-tab active" onclick="switchPipelineTab('shortlist')">⭐ Shortlist</button>
-                        <button class="pipeline-tab" onclick="switchPipelineTab('applications')">📨 Applications</button>
-                    </div>
-
-                    <!-- Shortlist panel -->
-                    <div class="pipeline-panel active" id="pipeline-shortlist">
-                        <div id="shortlist-content">
-                            <div class="empty-state">
-                                <div class="empty-state-art">
-                                    <svg width="200" height="160" viewBox="0 0 200 160" fill="none">
-                                        <rect x="40" y="100" width="120" height="8" rx="4" fill="#E8E6E1" opacity="0.06"/>
-                                        <rect x="48" y="100" width="3" height="24" rx="1" fill="#E8E6E1" opacity="0.04"/>
-                                        <rect x="149" y="100" width="3" height="24" rx="1" fill="#E8E6E1" opacity="0.04"/>
-                                        <circle cx="70" cy="80" r="14" fill="none" stroke="#E8E6E1" stroke-width="0.6" opacity="0.08" stroke-dasharray="3 3"/>
-                                        <circle cx="100" cy="80" r="14" fill="none" stroke="#E8E6E1" stroke-width="0.6" opacity="0.08" stroke-dasharray="3 3"/>
-                                        <circle cx="130" cy="80" r="14" fill="none" stroke="#E8E6E1" stroke-width="0.6" opacity="0.08" stroke-dasharray="3 3"/>
-                                        <path d="M96 74 Q92 68 88 72 Q84 76 90 82 Q94 86 100 84 Q106 82 108 76 Q110 70 104 68 Q98 66 96 74Z" fill="#E8291C" opacity="0.15" stroke="#E8291C" stroke-width="0.5"/>
-                                    </svg>
+                        <div class="pipeline-panel active" id="pipeline-shortlist">
+                            <div id="shortlist-content">
+                                <div class="empty-state">
+                                    <div class="empty-state-art">
+                                        <svg width="200" height="160" viewBox="0 0 200 160" fill="none">
+                                            <rect x="40" y="100" width="120" height="8" rx="4" fill="#E8E6E1" opacity="0.06"/>
+                                            <rect x="48" y="100" width="3" height="24" rx="1" fill="#E8E6E1" opacity="0.04"/>
+                                            <rect x="149" y="100" width="3" height="24" rx="1" fill="#E8E6E1" opacity="0.04"/>
+                                            <circle cx="70" cy="80" r="14" fill="none" stroke="#E8E6E1" stroke-width="0.6" opacity="0.08" stroke-dasharray="3 3"/>
+                                            <circle cx="100" cy="80" r="14" fill="none" stroke="#E8E6E1" stroke-width="0.6" opacity="0.08" stroke-dasharray="3 3"/>
+                                            <circle cx="130" cy="80" r="14" fill="none" stroke="#E8E6E1" stroke-width="0.6" opacity="0.08" stroke-dasharray="3 3"/>
+                                            <path d="M96 74 Q92 68 88 72 Q84 76 90 82 Q94 86 100 84 Q106 82 108 76 Q110 70 104 68 Q98 66 96 74Z" fill="#E8291C" opacity="0.15" stroke="#E8291C" stroke-width="0.5"/>
+                                        </svg>
+                                    </div>
+                                    <h2>No shortlisted jobs</h2>
+                                    <p>Use the star button while browsing to add jobs to your shortlist</p>
                                 </div>
-                                <h2>No shortlisted jobs</h2>
-                                <p>Use the ⭐ button while browsing to add jobs to your shortlist</p>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Applications panel -->
-                    <div class="pipeline-panel" id="pipeline-applications">
-                        <div class="diamond-pipeline" id="diamond-pipeline"></div>
-                        <div id="applications-list">
-                            <div class="empty-state">
-                                <div class="empty-state-art">
-                                    <svg width="200" height="160" viewBox="0 0 200 160" fill="none">
-                                        <rect x="60" y="40" width="80" height="6" rx="3" fill="#E8E6E1" opacity="0.06"/>
-                                        <rect x="60" y="110" width="80" height="6" rx="3" fill="#E8E6E1" opacity="0.06"/>
-                                        <rect x="62" y="40" width="4" height="76" rx="2" fill="#E8E6E1" opacity="0.05"/>
-                                        <rect x="134" y="40" width="4" height="76" rx="2" fill="#E8E6E1" opacity="0.05"/>
-                                        <g transform="translate(88, 48) rotate(2)"><rect width="6" height="56" rx="3" fill="#4A90D9" opacity="0.3"/><rect width="6" height="14" rx="3" fill="#E0E6ED" opacity="0.1"/></g>
-                                        <circle cx="100" cy="138" r="8" fill="none" stroke="#E0E6ED" stroke-width="0.8" opacity="0.12"/>
-                                        <path d="M96 134 Q100 138 96 142" fill="none" stroke="#4A90D9" stroke-width="0.5" opacity="0.2"/>
-                                        <path d="M104 134 Q100 138 104 142" fill="none" stroke="#4A90D9" stroke-width="0.5" opacity="0.2"/>
-                                    </svg>
+                    <!-- ── Applied Section ── -->
+                    <div id="jobs-applied-section" style="display:none">
+                        <div class="pipeline-panel" id="pipeline-applications">
+                            <div class="diamond-pipeline" id="diamond-pipeline"></div>
+                            <div id="applications-list">
+                                <div class="empty-state">
+                                    <div class="empty-state-art">
+                                        <svg width="200" height="160" viewBox="0 0 200 160" fill="none">
+                                            <rect x="60" y="40" width="80" height="6" rx="3" fill="#E8E6E1" opacity="0.06"/>
+                                            <rect x="60" y="110" width="80" height="6" rx="3" fill="#E8E6E1" opacity="0.06"/>
+                                            <rect x="62" y="40" width="4" height="76" rx="2" fill="#E8E6E1" opacity="0.05"/>
+                                            <rect x="134" y="40" width="4" height="76" rx="2" fill="#E8E6E1" opacity="0.05"/>
+                                            <g transform="translate(88, 48) rotate(2)"><rect width="6" height="56" rx="3" fill="#4A90D9" opacity="0.3"/><rect width="6" height="14" rx="3" fill="#E0E6ED" opacity="0.1"/></g>
+                                            <circle cx="100" cy="138" r="8" fill="none" stroke="#E0E6ED" stroke-width="0.8" opacity="0.12"/>
+                                            <path d="M96 134 Q100 138 96 142" fill="none" stroke="#4A90D9" stroke-width="0.5" opacity="0.2"/>
+                                            <path d="M104 134 Q100 138 104 142" fill="none" stroke="#4A90D9" stroke-width="0.5" opacity="0.2"/>
+                                        </svg>
+                                    </div>
+                                    <h2>No applications yet</h2>
+                                    <p>Apply to jobs to start tracking</p>
                                 </div>
-                                <h2>No applications yet</h2>
-                                <p>Apply to jobs to start tracking</p>
                             </div>
                         </div>
                     </div>
+
                 </div>
             </div>
 
-            <!-- ═══ Intel View (Insights & Analysis) ═══ -->
-            <div class="view" id="view-intel" data-view="intel">
+            <!-- ═══ Tools View (Insights & Analysis) ═══ -->
+            <div class="view" id="view-tools" data-view="tools">
                 <div class="insights-container" id="insights-container">
                     <!-- Sub-nav tabs within Intel -->
                     <div class="summary-tabs">
@@ -1137,6 +1132,6 @@
         <div class="toast-container" id="toast-container"></div>
     </div>
 
-    <script src="/static/js/app.js?v=20260319m"></script>
+    <script src="/static/js/app.js?v=20260320a"></script>
 </body>
 </html>

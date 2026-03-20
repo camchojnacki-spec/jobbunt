@@ -121,10 +121,16 @@ function setupNavigation() {
 
 function showView(name) {
     // Backward compat aliases
-    if (name === 'swipe') name = 'hunt';
-    if (name === 'scouting') name = 'hunt';
-    if (name === 'applications') name = 'pipeline';
-    if (name === 'insights') name = 'intel';
+    const pipelineRequested = (name === 'pipeline' || name === 'applications');
+    if (name === 'swipe') name = 'jobs';
+    if (name === 'scouting') name = 'jobs';
+    if (name === 'hunt') name = 'jobs';
+    if (name === 'pipeline') name = 'jobs';
+    if (name === 'applications') name = 'jobs';
+    if (name === 'dugout') name = 'home';
+    if (name === 'insights') name = 'tools';
+    if (name === 'intel') name = 'tools';
+    if (name === 'bullpen') name = 'tools';
     // settings is now a tab within profile, not a separate view
     if (name === 'settings') { name = 'profile'; setTimeout(() => switchProfileTab('settings'), 0); }
 
@@ -152,7 +158,7 @@ function showView(name) {
     const navEl = document.querySelector(`.nav-link[data-view="${name}"]`) || document.querySelector(`.nav-btn[data-view="${name}"]`);
     if (navEl) navEl.classList.add('active');
 
-    if (name === 'dugout') {
+    if (name === 'home') {
         if (typeof loadCoachNote === 'function') loadCoachNote();
         if (typeof loadStats === 'function') loadStats();
         if (typeof loadDugoutReadiness === 'function') loadDugoutReadiness();
@@ -161,19 +167,19 @@ function showView(name) {
         if (typeof loadReporterCorner === 'function') loadReporterCorner();
         if (typeof loadDugoutCharts === 'function') loadDugoutCharts();
     }
-    if (name === 'hunt') {
+    if (name === 'jobs') {
         loadSwipeStack();
         // Re-apply Spring Training gating to search buttons
         if (typeof getSpringTrainingLevel === 'function') {
             const st = getSpringTrainingLevel();
             applyFeatureGating(st.level, st.index);
         }
+        // If user came from pipeline/applications, switch to applied sub-tab
+        if (pipelineRequested) {
+            setTimeout(() => switchJobsTab('applied'), 0);
+        }
     }
-    if (name === 'pipeline') {
-        if (typeof loadPipelineData === 'function') loadPipelineData();
-    }
-    if (name === 'intel') {
-        if (typeof loadIntelData === 'function') loadIntelData();
+    if (name === 'tools') {
         // Re-apply Spring Training gating to Bullpen AI buttons
         if (typeof getSpringTrainingLevel === 'function') {
             const st = getSpringTrainingLevel();
@@ -210,7 +216,7 @@ async function loadProfile() {
                     setProfileMode('manual');
                 }
             } catch(e) { /* profile view not yet active */ }
-            showView('dugout');
+            showView('home');
         } else {
             // New user — auto-create a profile from auth data, then go to Profile
             try {
@@ -655,7 +661,7 @@ async function searchJobs() {
     const stLevel = getSpringTrainingLevel();
     if (stLevel.level !== 'the_show') {
         toast('Complete The Climb to unlock search! Current level: ' + SPRING_TRAINING_LEVELS[stLevel.index].name, 'warning');
-        showView('dugout');
+        showView('home');
         return;
     }
     if (state.searching) return;
@@ -686,7 +692,7 @@ async function searchJobs() {
 
         // Immediately load existing jobs so grid is visible
         await loadSwipeStack();
-        showView('hunt');
+        showView('jobs');
 
         // Poll every 4 seconds — refresh grid with new jobs as they arrive
         let lastCount = state.swipeStack?.length || 0;
@@ -1261,7 +1267,7 @@ function renderBrowseView() {
                 <div style="font-size:48px;margin-bottom:16px">&#x1F50D;</div>
                 <h2>No jobs yet</h2>
                 <p>Complete The Climb to unlock job search, then hit SEARCH JOBS to find opportunities.</p>
-                <button class="btn btn-primary" onclick="showView('dugout')">Go to The Climb</button>`;
+                <button class="btn btn-primary" onclick="showView('home')">Go to The Climb</button>`;
         } else {
             empty.innerHTML = `
                 <div style="font-size:48px;margin-bottom:16px">&#x1F50D;</div>
@@ -2100,7 +2106,7 @@ function setupKeyboard() {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
 
         const activeView = document.querySelector('.view.active');
-        if (!activeView || activeView.id !== 'view-swipe') return;
+        if (!activeView || activeView.id !== 'view-jobs') return;
 
         if (e.key === 'ArrowLeft' || e.key === 'a') {
             e.preventDefault();
@@ -3411,7 +3417,7 @@ function handleReadinessAction(action) {
     } else if (action === 'run:analyzeProfile') {
         runSpringTrainingAnalysis(null);
     } else if (action === 'run:searchJobs') {
-        showView('hunt');
+        showView('jobs');
     } else if (action.startsWith('view:')) {
         showView(action.replace('view:', ''));
     }
@@ -3464,7 +3470,7 @@ function loadClubhouseCard(container, taEl, saveBtn) {
 
     container.innerHTML = `
         <div class="clubhouse-actions">
-            <button class="btn btn-primary btn-sm" onclick="showView('hunt')">Search Jobs</button>
+            <button class="btn btn-primary btn-sm" onclick="showView('jobs')">Search Jobs</button>
             <button class="btn btn-outline btn-sm" onclick="showView('prospects')">View Shortlist</button>
             ${jobCount > 0 ? `<span class="clubhouse-badge">${jobCount} jobs</span>` : ''}
             ${shortlisted > 0 ? `<span class="clubhouse-badge clubhouse-badge-green">${shortlisted} shortlisted</span>` : ''}
@@ -4549,12 +4555,6 @@ async function acceptSuggestion(index) {
     }
 }
 
-
-window.applyArraySuggestion = applyArraySuggestion;
-
-
-window.applyArraySuggestion = applyArraySuggestion;
-
 async function applyArraySuggestion(index) {
     const suggestion = window._advisorSuggestions?.[index];
     if (!suggestion) { toast('Suggestion not found', 'error'); return; }
@@ -5607,7 +5607,7 @@ async function generateAll() {
     const stLevel = getSpringTrainingLevel();
     if (stLevel.index < 2) {
         toast('Reach Double-A in Spring Training to unlock AI features', 'warning');
-        showView('dugout');
+        showView('home');
         return;
     }
     const genAllBtn = document.getElementById('btn-generate-all');
@@ -6360,7 +6360,7 @@ function loadSpringTraining() {
         `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Upload Resume</button>`,
         `<button class="btn btn-primary btn-sm" onclick="showView('profile')">Edit Profile</button>`,
         `<button class="btn btn-primary btn-sm" onclick="runSpringTrainingAnalysis(this)">Analyze Profile</button>`,
-        `<button class="btn btn-primary btn-sm" onclick="showView('dugout');setTimeout(()=>document.getElementById('dugout-reporter-corner')?.scrollIntoView({behavior:'smooth',block:'center'}),200)">Answer Questions</button>`,
+        `<button class="btn btn-primary btn-sm" onclick="showView('home');setTimeout(()=>document.getElementById('dugout-reporter-corner')?.scrollIntoView({behavior:'smooth',block:'center'}),200)">Answer Questions</button>`,
         null,
     ];
 
@@ -6425,14 +6425,14 @@ function _addGatedClickHandler(btn, message) {
 function applyFeatureGating(level, index) {
     const levelName = SPRING_TRAINING_LEVELS[index]?.name || 'Rookie Ball';
 
-    // Gate search buttons: require "the_show" level
+    // Gate search buttons: unlock at Single-A (index >= 1)
     const searchBtns = document.querySelectorAll('#btn-search-jobs, #btn-search-more, #btn-search-empty');
     searchBtns.forEach(btn => {
-        if (index < 4) {
+        if (index < 1) {
             btn.classList.add('btn-gated');
-            btn.title = 'Complete The Climb to unlock search';
+            btn.title = 'Upload your resume to unlock search';
             btn._springGated = true;
-            _addGatedClickHandler(btn, 'Complete The Climb to unlock this feature. Current level: ' + levelName);
+            _addGatedClickHandler(btn, 'Upload your resume to unlock this feature. Current level: ' + levelName);
         } else {
             btn.classList.remove('btn-gated');
             btn.title = '';
@@ -6440,14 +6440,14 @@ function applyFeatureGating(level, index) {
         }
     });
 
-    // Gate Bullpen AI features: require "double_a" or higher
+    // Gate AI Tools features: unlock at Single-A (index >= 1)
     const genAllBtn = document.getElementById('btn-generate-all');
     if (genAllBtn) {
-        if (index < 2) {
+        if (index < 1) {
             genAllBtn.classList.add('btn-gated');
-            genAllBtn.title = 'Reach Double-A in Spring Training to unlock';
+            genAllBtn.title = 'Upload your resume to unlock AI tools';
             genAllBtn._springGated = true;
-            _addGatedClickHandler(genAllBtn, 'Complete The Climb to unlock this feature. Current level: ' + levelName);
+            _addGatedClickHandler(genAllBtn, 'Upload your resume to unlock this feature. Current level: ' + levelName);
         } else {
             genAllBtn.classList.remove('btn-gated');
             genAllBtn.title = '';
@@ -6455,25 +6455,20 @@ function applyFeatureGating(level, index) {
         }
     }
 
-    // Gate deep research shortlist button
+    // Gate deep research shortlist button: unlock at Single-A (index >= 1)
     const deepResBtn = document.getElementById('btn-deep-research-shortlist');
     if (deepResBtn) {
-        if (index < 2) {
+        if (index < 1) {
             deepResBtn.classList.add('btn-gated');
-            deepResBtn.title = 'Reach Double-A in Spring Training to unlock';
+            deepResBtn.title = 'Upload your resume to unlock';
             deepResBtn._springGated = true;
-            _addGatedClickHandler(deepResBtn, 'Complete The Climb to unlock this feature. Current level: ' + levelName);
+            _addGatedClickHandler(deepResBtn, 'Upload your resume to unlock this feature. Current level: ' + levelName);
         } else {
             deepResBtn.classList.remove('btn-gated');
             deepResBtn.title = '';
             deepResBtn._springGated = false;
         }
     }
-}
-
-// Alias for backward compat
-async function loadScoutingReport() {
-    loadSpringTraining();
 }
 
 async function loadDugoutCharts() {
@@ -6549,10 +6544,27 @@ async function loadPipelineData() {
     loadShortlist();
 }
 
-// ── Intel Data Loader ───────────────────────────────────────────────────
+// ── Jobs Sub-tab Switcher ───────────────────────────────────────────────
 
-function loadIntelData() {
-    // Default to pregame tab visible, don't auto-run
+function switchJobsTab(tab) {
+    // tab: 'browse', 'shortlist', 'applied'
+    document.querySelectorAll('.jobs-sub-tab').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase().includes(tab)));
+
+    const browseSection = document.getElementById('jobs-browse-section');
+    const shortlistSection = document.getElementById('jobs-shortlist-section');
+    const appliedSection = document.getElementById('jobs-applied-section');
+
+    if (browseSection) browseSection.style.display = tab === 'browse' ? 'block' : 'none';
+    if (shortlistSection) {
+        shortlistSection.style.display = tab === 'shortlist' ? 'block' : 'none';
+        if (tab === 'shortlist' && typeof loadShortlist === 'function') loadShortlist();
+    }
+    if (appliedSection) {
+        appliedSection.style.display = tab === 'applied' ? 'block' : 'none';
+        if (tab === 'applied' && typeof loadPipelineData === 'function') loadPipelineData();
+    }
+
+    state.activeJobsTab = tab;
 }
 
 // ── Window exports ──────────────────────────────────────────────────────
@@ -6573,6 +6585,7 @@ window.switchProfile = switchProfile;
 window.createNewProfile = createNewProfile;
 window.toggleImportSection = toggleImportSection;
 window.switchPipelineTab = switchPipelineTab;
+window.switchJobsTab = switchJobsTab;
 window.setButtonLoading = setButtonLoading;
 window.switchIntelTab = switchIntelTab;
 window.runFromHub = runFromHub;
