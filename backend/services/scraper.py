@@ -1896,9 +1896,10 @@ REGION_SOURCES = {
     # serpapi covers Indeed/Glassdoor/Google Jobs via API (rate-limited to 5 calls/session)
     # google_jobs direct scraping removed (JS-rendered, always fails)
     # indeed/glassdoor direct scraping removed (403/429 blocks)
-    "canada": ["serpapi", "linkedin", "careerjet", "talent", "adzuna", "jobbank", "gcjobs", "remoteok"],
-    "usa": ["serpapi", "linkedin", "careerjet", "talent", "adzuna", "usajobs", "remoteok"],
-    "global": ["serpapi", "linkedin", "careerjet", "talent", "adzuna", "remoteok"],
+    # serpapi paused — preserving quota while fixing coverage strategy
+    "canada": ["linkedin", "careerjet", "talent", "adzuna", "jobbank", "gcjobs", "remoteok"],
+    "usa": ["linkedin", "careerjet", "talent", "adzuna", "usajobs", "remoteok"],
+    "global": ["linkedin", "careerjet", "talent", "adzuna", "remoteok"],
 }
 
 
@@ -1939,17 +1940,13 @@ async def _search_with_fallback(source_key: str, query: str, location: str, limi
     if source_key == "adzuna" and not adzuna_key:
         return []
 
-    # If Indeed is requested and SerpAPI key is available, prefer SerpAPI
-    # (Indeed's direct scraping/RSS is consistently blocked with 403/429)
-    if source_key == "indeed" and serpapi_key:
-        try:
-            results = await search_serpapi_indeed(query, location, limit)
-            if results:
-                _record_source_success("indeed", len(results))
-                return results
-            logger.info("[indeed] SerpAPI Indeed returned 0 results, falling through to direct scraping")
-        except Exception as e:
-            logger.warning(f"[indeed] SerpAPI Indeed failed: {e}, falling through to direct scraping")
+    # SerpAPI paused — skip SerpAPI fallback for Indeed
+    # if source_key == "indeed" and serpapi_key:
+    #     try:
+    #         results = await search_serpapi_indeed(query, location, limit)
+    #         ...
+    #     except Exception as e:
+    #         ...
 
     # Check source health — skip temporarily broken sources
     if not _is_source_healthy(source_key):
