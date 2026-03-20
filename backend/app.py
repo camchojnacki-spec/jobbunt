@@ -16,6 +16,7 @@ from backend.database import init_db, get_db, SessionLocal
 from backend.routes.api import router as api_router
 from backend.routes.auth import router as auth_router
 from backend.auth import auth_enabled, get_user_from_request
+from backend.exceptions import JobbuntError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -46,14 +47,20 @@ def _check_rate_limit(key: str, max_requests: int) -> bool:
 
 app = FastAPI(title="Jobbunt", description="Tinder-style job search & auto-apply")
 
-# CORS — allow browser-scraped pages to POST jobs back to localhost
+# CORS — restrict origins; in production set ALLOWED_ORIGINS env var to the Cloud Run URL
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(JobbuntError)
+async def jobbunt_error_handler(request, exc):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
 # Initialize database
 init_db()
@@ -147,5 +154,20 @@ async def index():
 
 
 @app.get("/health")
-async def health():
-    return {"status": "ok"}
+async def health_check():
+    """Health check for Cloud Run and monitoring."""
+    from sqlalchemy import text
+    status = {"status": "healthy", "version": "2.0.0"}
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        status["database"] = "connected"
+    except Exception as e:
+        status["status"] = "degraded"
+        status["database"] = f"error: {str(e)[:100]}"
+
+    status["ai_provider"] = os.environ.get("AI_PROVIDER", "gemini")
+    status["has_gemini_key"] = bool(os.environ.get("GEMINI_API_KEY"))
+    status["has_serpapi_key"] = bool(os.environ.get("SERPAPI_KEY"))
+    return status

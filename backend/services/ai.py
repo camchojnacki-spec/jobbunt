@@ -15,6 +15,29 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# ── Lazy singleton clients (avoid re-creating on every call) ──────────────
+
+_anthropic_client = None
+_gemini_client = None
+
+
+def _get_anthropic_client():
+    global _anthropic_client
+    if _anthropic_client is None:
+        import anthropic
+        _anthropic_client = anthropic.AsyncAnthropic()
+    return _anthropic_client
+
+
+def _get_gemini_client():
+    global _gemini_client
+    if _gemini_client is None:
+        from google import genai
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        _gemini_client = genai.Client(api_key=api_key)
+    return _gemini_client
+
+
 # ── Model mapping ─────────────────────────────────────────────────────────
 
 GEMINI_MODELS = {
@@ -122,8 +145,7 @@ async def ai_generate_json(prompt: str, max_tokens: int = 1500, model_tier: str 
 async def _anthropic_generate(prompt: str, max_tokens: int, model_tier: str) -> str:
     """Use Anthropic Claude API."""
     try:
-        import anthropic
-        client = anthropic.AsyncAnthropic()
+        client = _get_anthropic_client()
         model = ANTHROPIC_MODELS.get(model_tier, ANTHROPIC_MODELS["flash"])
         response = await client.messages.create(
             model=model,
@@ -139,10 +161,7 @@ async def _anthropic_generate(prompt: str, max_tokens: int, model_tier: str) -> 
 async def _gemini_generate(prompt: str, max_tokens: int, model_tier: str) -> str:
     """Use Google Gemini API with tier-appropriate model."""
     try:
-        from google import genai
-
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        client = genai.Client(api_key=api_key)
+        client = _get_gemini_client()
 
         model_name = GEMINI_MODELS.get(model_tier, GEMINI_MODELS["flash"])
         thinking_budget = THINKING_BUDGETS.get(model_tier, 0)
@@ -161,7 +180,7 @@ async def _gemini_generate(prompt: str, max_tokens: int, model_tier: str) -> str
 
         logger.info(f"Gemini call: model={model_name}, tier={model_tier}, max_tokens={config['max_output_tokens']}, thinking={thinking_budget}")
 
-        response = client.models.generate_content(
+        response = await client.aio.models.generate_content(
             model=model_name,
             contents=prompt,
             config=config,

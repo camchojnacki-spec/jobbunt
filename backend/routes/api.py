@@ -28,22 +28,11 @@ from backend.services.enrichment import enrich_job, enrich_company, get_or_creat
 from backend.services.browser_scraper import build_search_urls, get_extractor, detect_site, DETAIL_EXTRACTOR, SCROLL_AND_LOAD, PAGINATION_URLS
 from backend.tasks import run_background, get_task_status, find_running_task
 from backend.database import SessionLocal
+from backend.utils import safe_json, safe_json_list
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
-
-def _safe_json(raw: str | None, default=None):
-    """Parse a JSON string safely, returning *default* on any failure."""
-    if default is None:
-        default = []
-    if not raw:
-        return default
-    try:
-        return json.loads(raw)
-    except (json.JSONDecodeError, TypeError, ValueError):
-        logger.warning(f"Malformed JSON field (len={len(raw)}): {raw[:80]}...")
-        return default
 
 # Progress tracking for long-running tasks
 _rescore_progress = {}  # {profile_id: {"current": n, "total": n, "status": "running"|"done"|"error"}}
@@ -925,8 +914,8 @@ async def browser_search_config(
     if not profile:
         raise HTTPException(404, "Profile not found")
 
-    target_roles = _safe_json(profile.target_roles, [])
-    target_locations = _safe_json(profile.target_locations, [])
+    target_roles = safe_json(profile.target_roles, [])
+    target_locations = safe_json(profile.target_locations, [])
 
     if not target_roles:
         raise HTTPException(400, "Profile needs target roles for browser search")
@@ -1915,7 +1904,7 @@ async def answer_interview_question(profile_id: int, question_id: int, data: Ans
     # Update profile additional_info with the answer for future use
     profile = db.query(Profile).filter(Profile.id == profile_id).first()
     if profile:
-        additional = _safe_json(profile.additional_info, {})
+        additional = safe_json(profile.additional_info, {})
         additional[q.question] = data.answer
         profile.additional_info = json.dumps(additional)
         db.commit()
@@ -2016,7 +2005,7 @@ async def extract_career_stats(profile_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Profile not found")
 
     # Return cached if available
-    existing = _safe_json(profile.career_history, [])
+    existing = safe_json(profile.career_history, [])
     if existing:
         return {"career_history": existing, "cached": True}
 
@@ -2115,9 +2104,9 @@ async def generate_scouting_report(profile_id: int, db: Session = Depends(get_db
 
     # Gather data needed for the prompt before launching background
     resume = profile.resume_text or profile.raw_profile_doc or ""
-    roles = _safe_json_list(profile.target_roles)
-    skills = _safe_json_list(profile.skills)
-    career = _safe_json(profile.career_history, [])
+    roles = safe_json_list(profile.target_roles)
+    skills = safe_json_list(profile.skills)
+    career = safe_json(profile.career_history, [])
     name = profile.name
     experience_years = profile.experience_years
 
@@ -2238,8 +2227,8 @@ async def get_search_advisor(profile_id: int, db: Session = Depends(get_db)):
         return {"task_id": existing_task, "status": "running"}
 
     # Quick pre-check — if there's no data to analyze, return immediately
-    target_roles = _safe_json(profile.target_roles, [])
-    profile_skills = _safe_json(profile.skills, [])
+    target_roles = safe_json(profile.target_roles, [])
+    profile_skills = safe_json(profile.skills, [])
     if not target_roles and not profile_skills and not profile.resume_text:
         return {"advisor": None, "reason": "Add target roles, skills, or upload a resume before requesting analysis"}
 
@@ -2265,9 +2254,9 @@ async def _do_search_advisor(profile_id: int):
 async def _build_search_advisor(profile_id: int, profile, db: Session):
     """Inner logic for search advisor, wrapped so caller can catch all errors."""
     # ── Sanity checks ──
-    target_roles = _safe_json(profile.target_roles, [])
-    target_locations = _safe_json(profile.target_locations, [])
-    profile_skills = _safe_json(profile.skills, [])
+    target_roles = safe_json(profile.target_roles, [])
+    target_locations = safe_json(profile.target_locations, [])
+    profile_skills = safe_json(profile.skills, [])
 
     # Need at least some profile data to give meaningful advice
     if not target_roles and not profile_skills and not profile.resume_text:
@@ -2330,7 +2319,7 @@ async def _build_search_advisor(profile_id: int, profile, db: Session):
     qa_context = "\n".join([f"Q: {q.question}\nA: {q.answer}" for q in answered_qs]) if answered_qs else "None yet"
 
     # Additional info from profile
-    additional = _safe_json(profile.additional_info, {})
+    additional = safe_json(profile.additional_info, {})
 
     prompt = f"""You are a senior executive career coach with deep expertise in career trajectory analysis, ATS optimization, and strategic job search planning.
 Provide an HONEST, data-driven assessment with ACTIONABLE paths forward. Be direct but constructive — your job is to help them find the RIGHT role AND create a concrete plan to get there.
@@ -2681,7 +2670,7 @@ async def _build_insights(profile_id: int, profile, db: Session):
         app_status_dist[a.status] = app_status_dist.get(a.status, 0) + 1
 
     # Skills coverage analysis: which user skills appear in what % of jobs
-    profile_skills = _safe_json(profile.skills, [])
+    profile_skills = safe_json(profile.skills, [])
     skills_coverage = {}
     if profile_skills and all_jobs:
         for skill in profile_skills:
@@ -2916,12 +2905,12 @@ def get_apply_readiness(profile_id: int, db: Session = Depends(get_db)):
     has_resume = bool(profile.resume_path) or bool(profile.resume_text)
     basics.append(check("Resume uploaded", has_resume, "Most applications require a resume file", "scroll:resume-drop-zone"))
 
-    skills = _safe_json(profile.skills, [])
+    skills = safe_json(profile.skills, [])
     basics.append(check("Skills listed (3+)", len(skills) >= 3, f"{len(skills)} skills" if skills else "Add at least 3 skills", "scroll:f-skills-input"))
 
     basics.append(check("Years of experience", profile.experience_years is not None, f"{profile.experience_years} years" if profile.experience_years else "Helps with seniority matching", "scroll:f-experience"))
 
-    roles = _safe_json(profile.target_roles, [])
+    roles = safe_json(profile.target_roles, [])
     basics.append(check("Target roles defined", len(roles) >= 1, f"{len(roles)} roles" if roles else "Define what you're looking for", "scroll:f-roles-input"))
 
     basics.append(check("Profile analyzed by AI", bool(profile.profile_analyzed), "Enables smarter cover letters and matching", "run:analyzeProfile"))
@@ -2938,10 +2927,10 @@ def get_apply_readiness(profile_id: int, db: Session = Depends(get_db)):
 
     quality.append(check("Leadership style", bool(profile.leadership_style), "Defined" if profile.leadership_style else "Run AI analysis to generate", "run:analyzeProfile"))
 
-    strengths = _safe_json(profile.strengths, [])
+    strengths = safe_json(profile.strengths, [])
     quality.append(check("Strengths identified (3+)", len(strengths) >= 3, f"{len(strengths)} strengths" if strengths else "Run AI analysis to generate", "run:analyzeProfile"))
 
-    industries = _safe_json(profile.industry_preferences, [])
+    industries = safe_json(profile.industry_preferences, [])
     quality.append(check("Industry preference", len(industries) >= 1, f"{len(industries)} industries" if industries else "Run AI analysis or add manually", "scroll:reporter-question"))
 
     quality.append(check("Seniority level set", bool(profile.seniority_level), profile.seniority_level or "Run AI analysis to determine", "scroll:reporter-question"))
@@ -2968,7 +2957,7 @@ def get_apply_readiness(profile_id: int, db: Session = Depends(get_db)):
     strategy.append(check("Salary expectations set", bool(profile.min_salary and profile.min_salary > 0), f"${profile.min_salary:,}+" if profile.min_salary else "Set minimum salary", "scroll:f-min-salary"))
 
     # Location preferences
-    locations = _safe_json(profile.target_locations, [])
+    locations = safe_json(profile.target_locations, [])
     strategy.append(check("Location preferences set", len(locations) >= 1, f"{len(locations)} locations" if locations else "Add target locations", "scroll:f-locations-input"))
 
     # Remote preference is intentional — "any" is a valid deliberate choice
@@ -3121,7 +3110,7 @@ def get_field_suggestions(
                     break
 
         # Filter existing skills out
-        existing = set(s.lower() for s in _safe_json(profile.skills, []))
+        existing = set(s.lower() for s in safe_json(profile.skills, []))
         suggestions = [
             {"value": k, "count": v}
             for k, v in sorted(skill_freq.items(), key=lambda x: -x[1])
@@ -3142,7 +3131,7 @@ def get_field_suggestions(
                     and title.lower() not in junk_titles
                     and not any(p in title for p in ['CivicJobs.ca', 'CareerBeacon', 'Indeed.com', 'LinkedIn'])):
                 title_freq[title] = title_freq.get(title, 0) + 1
-        existing = set(r.lower() for r in _safe_json(profile.target_roles, []))
+        existing = set(r.lower() for r in safe_json(profile.target_roles, []))
         suggestions = [
             {"value": k, "count": v}
             for k, v in sorted(title_freq.items(), key=lambda x: -x[1])
@@ -3157,7 +3146,7 @@ def get_field_suggestions(
             loc = (j.location or "").strip()
             if loc and len(loc) < 80:
                 loc_freq[loc] = loc_freq.get(loc, 0) + 1
-        existing = set(l.lower() for l in _safe_json(profile.target_locations, []))
+        existing = set(l.lower() for l in safe_json(profile.target_locations, []))
         suggestions = [
             {"value": k, "count": v}
             for k, v in sorted(loc_freq.items(), key=lambda x: -x[1])
@@ -3180,7 +3169,7 @@ def skill_demand(profile_id: int, db: Session = Depends(get_db)):
     if not all_jobs:
         return {"total_jobs": 0, "skill_hits": {}}
 
-    profile_skills = _safe_json(profile.skills, [])
+    profile_skills = safe_json(profile.skills, [])
     skill_hits = {}
     for skill in profile_skills:
         count = 0
@@ -3204,7 +3193,7 @@ async def skills_audit(profile_id: int, db: Session = Depends(get_db)):
     if not all_jobs:
         return {"audit": None, "reason": "No jobs found yet — search first"}
 
-    profile_skills = _safe_json(profile.skills, [])
+    profile_skills = safe_json(profile.skills, [])
 
     # Compute hit rate for each profile skill
     skill_hits = {}
@@ -3352,18 +3341,6 @@ def _job_completeness(j: Job) -> int:
     return int((score / total) * 100) if total > 0 else 0
 
 
-def _safe_json_list(val: str | None) -> list:
-    """Safely parse a JSON list field, returning [] on any error."""
-    if not val:
-        return []
-    try:
-        result = json.loads(val)
-        return result if isinstance(result, list) else [str(result)]
-    except (json.JSONDecodeError, TypeError):
-        # Field contains plain text (e.g. from AI suggestion) — wrap as single-item list
-        return [s.strip().strip('"') for s in val.split(",") if s.strip()] if val else []
-
-
 def _profile_dict(p: Profile) -> dict:
     return {
         "id": p.id,
@@ -3372,13 +3349,13 @@ def _profile_dict(p: Profile) -> dict:
         "email": p.email,
         "phone": p.phone,
         "location": p.location,
-        "target_roles": _safe_json_list(p.target_roles),
-        "target_locations": _safe_json_list(p.target_locations),
+        "target_roles": safe_json_list(p.target_roles),
+        "target_locations": safe_json_list(p.target_locations),
         "min_salary": p.min_salary,
         "max_salary": p.max_salary,
         "remote_preference": p.remote_preference,
         "experience_years": p.experience_years,
-        "skills": _safe_json_list(p.skills),
+        "skills": safe_json_list(p.skills),
         "resume_uploaded": bool(p.resume_path),
         "has_resume_text": bool(p.resume_text),
         "cover_letter_template": p.cover_letter_template,
@@ -3388,16 +3365,16 @@ def _profile_dict(p: Profile) -> dict:
         "profile_summary": p.profile_summary,
         "career_trajectory": p.career_trajectory,
         "leadership_style": p.leadership_style,
-        "industry_preferences": _safe_json_list(p.industry_preferences),
-        "values": _safe_json_list(p.values),
-        "deal_breakers": _safe_json_list(p.deal_breakers),
-        "strengths": _safe_json_list(p.strengths),
-        "growth_areas": _safe_json_list(p.growth_areas),
+        "industry_preferences": safe_json_list(p.industry_preferences),
+        "values": safe_json_list(p.values),
+        "deal_breakers": safe_json_list(p.deal_breakers),
+        "strengths": safe_json_list(p.strengths),
+        "growth_areas": safe_json_list(p.growth_areas),
         "ideal_culture": p.ideal_culture,
         "seniority_level": p.seniority_level,
         "search_tiers_down": p.search_tiers_down or 0,
         "search_tiers_up": p.search_tiers_up or 0,
-        "career_history": _safe_json(p.career_history, []),
+        "career_history": safe_json(p.career_history, []),
         # Reporter Corner fields
         "availability": p.availability,
         "employment_type": p.employment_type,

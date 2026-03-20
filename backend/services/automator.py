@@ -21,20 +21,9 @@ from sqlalchemy.orm import Session
 
 from backend.models.models import Job, Application, Profile, Company
 from backend.services.ai import ai_generate_json, get_provider
+from backend.utils import safe_json
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_json(raw, default=None):
-    """Parse a JSON string safely, returning *default* on any failure."""
-    if default is None:
-        default = []
-    if not raw:
-        return default
-    try:
-        return json.loads(raw)
-    except (json.JSONDecodeError, TypeError, ValueError):
-        return default
 
 
 # ── Platform-specific strategies ─────────────────────────────────────────
@@ -217,8 +206,8 @@ async def build_automation_plan(
     strategy = get_platform_strategy(platform)
 
     # Build form data
-    skills = _safe_json(profile.skills, [])
-    additional = _safe_json(profile.additional_info, {})
+    skills = safe_json(profile.skills, [])
+    additional = safe_json(profile.additional_info, {})
 
     form_data = {
         "first_name": profile.name.split()[0] if profile.name else "",
@@ -227,7 +216,7 @@ async def build_automation_plan(
         "email": profile.email or "",
         "phone": profile.phone or "",
         "location": profile.location or "",
-        "current_title": (_safe_json(profile.target_roles, []) or [""])[0],
+        "current_title": (safe_json(profile.target_roles, []) or [""])[0],
         "experience_years": profile.experience_years,
         "skills_text": ", ".join(skills),
         "linkedin_url": additional.get("linkedin_url", ""),

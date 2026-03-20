@@ -12,20 +12,10 @@ from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
 from backend.models.models import Job, Profile
+from backend.utils import safe_json
+from backend.constants import SENIORITY_TIERS, TIER_TITLE_VARIANTS
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_json(raw, default=None):
-    """Parse a JSON string safely, returning *default* on any failure."""
-    if default is None:
-        default = []
-    if not raw:
-        return default
-    try:
-        return json.loads(raw)
-    except (json.JSONDecodeError, TypeError, ValueError):
-        return default
 
 
 import asyncio
@@ -1408,18 +1398,6 @@ async def fetch_job_details(url: str) -> dict:
         return {}
 
 
-SENIORITY_TIERS = ["entry", "mid", "senior", "director", "vp", "c-suite"]
-
-# Map of seniority tier to common title keywords for that tier
-TIER_TITLE_VARIANTS = {
-    "entry": ["junior", "associate", "analyst", "coordinator"],
-    "mid": ["specialist", "consultant", "advisor", "lead"],
-    "senior": ["senior", "sr.", "principal", "staff"],
-    "director": ["director", "head of", "practice lead"],
-    "vp": ["vp", "vice president", "avp", "svp"],
-    "c-suite": ["chief", "cto", "cio", "ciso", "cfo", "coo"],
-}
-
 
 def _generate_tier_variants(base_roles: list[str], seniority_level: str, tiers_down: int, tiers_up: int) -> list[str]:
     """Generate additional role variants based on seniority tier range.
@@ -2004,13 +1982,13 @@ async def _ai_expand_queries(profile: Profile, base_roles: list[str]) -> tuple[l
 
         profile_summary = getattr(profile, 'profile_summary', '') or ''
         career_trajectory = getattr(profile, 'career_trajectory', '') or ''
-        skills = _safe_json(profile.skills, [])
-        industries = _safe_json(getattr(profile, 'industry_preferences', None), [])
+        skills = safe_json(profile.skills, [])
+        industries = safe_json(getattr(profile, 'industry_preferences', None), [])
         seniority = getattr(profile, 'seniority_level', None) or 'senior'
         tiers_down = getattr(profile, 'search_tiers_down', 0) or 0
         tiers_up = getattr(profile, 'search_tiers_up', 0) or 0
-        deal_breakers = _safe_json(getattr(profile, 'deal_breakers', None), [])
-        strengths = _safe_json(getattr(profile, 'strengths', None), [])
+        deal_breakers = safe_json(getattr(profile, 'deal_breakers', None), [])
+        strengths = safe_json(getattr(profile, 'strengths', None), [])
 
         # Also get rule-based negative keywords as a starting point
         rule_based_negatives = _build_negative_keywords(profile)
@@ -2082,8 +2060,8 @@ def _build_negative_keywords(profile: Profile) -> list[str]:
     Uses profile skills and target roles to detect the candidate's domain,
     then returns keywords that commonly cause false-positive matches.
     """
-    target_roles = _safe_json(profile.target_roles, [])
-    skills = _safe_json(profile.skills, [])
+    target_roles = safe_json(profile.target_roles, [])
+    skills = safe_json(profile.skills, [])
     profile_text = " ".join(target_roles + skills).lower()
 
     negative_keywords = []
@@ -2137,8 +2115,8 @@ async def filter_irrelevant_jobs(profile: Profile, raw_jobs: list[dict]) -> list
         logger.info("AI relevance filter skipped: no AI provider configured")
         return raw_jobs
 
-    target_roles = _safe_json(profile.target_roles, [])
-    skills = _safe_json(profile.skills, [])
+    target_roles = safe_json(profile.target_roles, [])
+    skills = safe_json(profile.skills, [])
     profile_summary = getattr(profile, 'profile_summary', '') or ''
     seniority = getattr(profile, 'seniority_level', None) or ''
 
@@ -2214,8 +2192,8 @@ async def search_all_sources(profile: Profile, sources: list[str] | None = None,
                  If None, auto-detects based on target locations.
         limit_per_source: Max results per source per query
     """
-    target_roles = _safe_json(profile.target_roles, [])
-    target_locations = _safe_json(profile.target_locations, [""])
+    target_roles = safe_json(profile.target_roles, [])
+    target_locations = safe_json(profile.target_locations, [""])
 
     if not target_roles:
         target_roles = [""]
@@ -2233,7 +2211,7 @@ async def search_all_sources(profile: Profile, sources: list[str] | None = None,
     # Domain-aware executive title injection: for cybersecurity profiles that
     # include director tier+up to c-suite, ensure CISO is explicitly searched
     roles_lower = [r.lower() for r in target_roles]
-    skills_json = _safe_json(profile.skills, [])
+    skills_json = safe_json(profile.skills, [])
     skills_lower = " ".join(s.lower() for s in skills_json) if isinstance(skills_json, list) else str(skills_json).lower()
     is_cyber = any(kw in skills_lower for kw in ["cybersecurity", "information security", "infosec", "cyber security", "security grc"])
     if is_cyber:

@@ -70,6 +70,7 @@ class Profile(Base):
     career_history = Column(Text)  # JSON: structured work history [{company, role, start_year, end_year, years, stat_line}]
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    archived_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="profiles")
     jobs = relationship("Job", back_populates="profile")
@@ -119,6 +120,7 @@ class Company(Base):
     enriched = Column(Boolean, default=False)
     enriched_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     jobs = relationship("Job", back_populates="company_rel")
 
@@ -195,6 +197,7 @@ class Job(Base):
     original_job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)
 
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    archived_at = Column(DateTime, nullable=True)
 
     profile = relationship("Profile", back_populates="jobs")
     company_rel = relationship("Company", back_populates="jobs")
@@ -204,6 +207,8 @@ class Job(Base):
     __table_args__ = (
         Index("ix_jobs_profile_fingerprint", "profile_id", "fingerprint"),
         Index("ix_jobs_status", "status"),
+        Index("ix_jobs_profile_status_score", "profile_id", "status", "match_score"),
+        Index("ix_jobs_created_at", "created_at"),
     )
 
 
@@ -263,3 +268,88 @@ class ProfileQuestion(Base):
     answered_at = Column(DateTime, nullable=True)
 
     profile = relationship("Profile")
+
+
+class Interview(Base):
+    __tablename__ = "interviews"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False, index=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=False, index=True)
+    round_number = Column(Integer, default=1)
+    interview_type = Column(String(100))  # phone_screen, technical, behavioral, panel, case_study, final
+    scheduled_at = Column(DateTime, nullable=True)
+    duration_minutes = Column(Integer, nullable=True)
+    interviewer_names = Column(Text)  # JSON list
+    prep_notes = Column(Text)  # AI-generated or user-written
+    questions_asked = Column(Text)  # JSON list after interview
+    outcome = Column(String(50))  # pending, passed, failed, no_decision
+    feedback = Column(Text)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+class SavedSearch(Base):
+    __tablename__ = "saved_searches"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=False, index=True)
+    name = Column(String(200))
+    query_config = Column(Text)  # JSON: {roles, locations, sources, filters}
+    min_score = Column(Integer, default=70)
+    last_run_at = Column(DateTime, nullable=True)
+    results_count = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class FollowUp(Base):
+    __tablename__ = "follow_ups"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=True, index=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=False, index=True)
+    follow_up_type = Column(String(50))  # thank_you, status_check, post_interview, networking
+    due_date = Column(DateTime, nullable=False)
+    completed = Column(Boolean, default=False)
+    completed_at = Column(DateTime, nullable=True)
+    draft_content = Column(Text)  # AI-generated draft
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class Document(Base):
+    __tablename__ = "documents"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=False, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True, index=True)
+    doc_type = Column(String(50))  # resume, cover_letter, reference_list, tailored_resume
+    version = Column(Integer, default=1)
+    title = Column(String(200))
+    content = Column(Text)
+    file_path = Column(String(500))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class Contact(Base):
+    __tablename__ = "contacts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=False, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)
+    name = Column(String(200), nullable=False)
+    title = Column(String(200))
+    email = Column(String(200))
+    linkedin_url = Column(String(500))
+    phone = Column(String(50))
+    relationship_type = Column(String(100))  # recruiter, hiring_manager, referral, networking
+    notes = Column(Text)
+    last_contacted = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class AICache(Base):
+    __tablename__ = "ai_cache"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cache_key = Column(String(64), unique=True, index=True)  # hash of prompt
+    response = Column(Text)
+    model_tier = Column(String(20))
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    ttl_hours = Column(Integer, default=168)  # 7 days

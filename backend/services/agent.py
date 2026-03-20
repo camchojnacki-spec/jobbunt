@@ -14,20 +14,9 @@ from sqlalchemy.orm import Session
 
 from backend.models.models import Job, Application, Profile, AgentQuestion
 from backend.services.ai import ai_generate, ai_generate_json, get_provider
+from backend.utils import safe_json
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_json(raw, default=None):
-    """Parse a JSON string safely, returning *default* on any failure."""
-    if default is None:
-        default = []
-    if not raw:
-        return default
-    try:
-        return json.loads(raw)
-    except (json.JSONDecodeError, TypeError, ValueError):
-        return default
 
 
 # ── Application Steps ─────────────────────────────────────────────────────
@@ -69,7 +58,7 @@ async def generate_cover_letter(profile: Profile, job: Job) -> str:
     # Pull in additional Q&A context from profile interviews
     additional_answers = ""
     try:
-        additional = _safe_json(profile.additional_info, {})
+        additional = safe_json(profile.additional_info, {})
         if additional:
             additional_answers = "\n".join([f"- {k}: {v}" for k, v in list(additional.items())[:10]])
     except Exception:
@@ -118,7 +107,7 @@ Write the complete cover letter including "Dear Hiring Manager," salutation and 
 
 
 def _fallback_cover_letter(profile: Profile, job: Job) -> str:
-    skills = _safe_json(profile.skills, [])
+    skills = safe_json(profile.skills, [])
     skills_str = ", ".join(skills[:5]) if skills else "relevant skills"
     return (
         f"I am writing to express my strong interest in the {job.title} position at {job.company}. "
@@ -268,7 +257,7 @@ async def _analyze_application(job: Job, profile: Profile) -> dict:
     if get_provider() == "none":
         return analysis
 
-    additional_info = _safe_json(profile.additional_info, {})
+    additional_info = safe_json(profile.additional_info, {})
     prompt = f"""You are a job application assistant. Analyze this job posting and determine:
 1. What information is needed to apply (beyond standard resume/cover letter)
 2. Whether there are any questions that need the candidate's input
@@ -340,8 +329,8 @@ def _detect_platform(url: str) -> str:
 
 def _build_application_package(profile: Profile, job: Job, application: Application, analysis: dict) -> dict:
     """Build the data package needed for browser-based form submission."""
-    skills = _safe_json(profile.skills, [])
-    additional = _safe_json(profile.additional_info, {})
+    skills = safe_json(profile.skills, [])
+    additional = safe_json(profile.additional_info, {})
 
     package = {
         "url": job.url,
@@ -416,7 +405,7 @@ async def answer_question(db: Session, question_id: int, answer: str) -> dict:
             if application and application.status == "needs_input":
                 # Store answers in profile additional_info for future use
                 profile = application.profile
-                additional_info = _safe_json(profile.additional_info, {})
+                additional_info = safe_json(profile.additional_info, {})
                 additional_info[question.question] = answer
                 profile.additional_info = json.dumps(additional_info)
 

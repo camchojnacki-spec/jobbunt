@@ -15,34 +15,10 @@ from typing import Optional
 
 from backend.models.models import Job, Profile, Company
 from backend.services.ai import ai_generate_json, get_provider
+from backend.utils import safe_json
+from backend.constants import SENIORITY_TIERS, TIER_TITLE_KEYWORDS, TITLE_SYNONYMS
 
 logger = logging.getLogger(__name__)
-
-# ── Seniority tier definitions (mirrored from scraper) ──────────────
-SENIORITY_TIERS = ["entry", "mid", "senior", "director", "vp", "c-suite"]
-
-TIER_TITLE_KEYWORDS = {
-    "entry": ["entry", "junior", "associate", "intern"],
-    "mid": ["mid", "intermediate"],
-    "senior": ["senior", "sr.", "principal", "staff"],
-    "director": ["director", "head of", "practice lead"],
-    "vp": ["vp", "vice president", "avp", "svp"],
-    "c-suite": ["chief", "cto", "cio", "ciso", "cfo", "coo", "ceo"],
-}
-
-# Title synonyms: expanded forms for abbreviations commonly used in titles
-TITLE_SYNONYMS = {
-    "ciso": "chief information security officer",
-    "cto": "chief technology officer",
-    "cio": "chief information officer",
-    "cfo": "chief financial officer",
-    "coo": "chief operating officer",
-    "ceo": "chief executive officer",
-    "vp": "vice president",
-    "svp": "senior vice president",
-    "avp": "assistant vice president",
-    "evp": "executive vice president",
-}
 
 
 def _expand_title(title: str) -> str:
@@ -110,18 +86,6 @@ def _word_match(term, text):
     return bool(re.search(pattern, text.lower()))
 
 
-def _safe_json(raw, default=None):
-    """Parse a JSON string safely, returning *default* on any failure."""
-    if default is None:
-        default = []
-    if not raw:
-        return default
-    try:
-        return json.loads(raw)
-    except (json.JSONDecodeError, TypeError, ValueError):
-        return default
-
-
 # Dimension weights (must sum to 100)
 # Base weights used when deep research is NOT available
 BASE_WEIGHTS = {
@@ -168,11 +132,11 @@ def score_job_multidim(job: Job, profile: Profile, company: Company = None) -> d
     breakdown = {}
     reasons = []
 
-    skills = _safe_json(profile.skills, [])
-    target_roles = _safe_json(profile.target_roles, [])
-    target_locations = _safe_json(profile.target_locations, [])
-    deal_breakers = _safe_json(profile.deal_breakers, [])
-    values = _safe_json(profile.values, [])
+    skills = safe_json(profile.skills, [])
+    target_roles = safe_json(profile.target_roles, [])
+    target_locations = safe_json(profile.target_locations, [])
+    deal_breakers = safe_json(profile.deal_breakers, [])
+    values = safe_json(profile.values, [])
 
     job_text = f"{job.title} {job.description or ''} {job.requirements or ''}".lower()
 
@@ -642,7 +606,7 @@ def score_job_multidim(job: Job, profile: Profile, company: Company = None) -> d
     # ── Advisor Boost ──────────────────────────────────────────────────
     # If the AI advisor has recommended roles/keywords, boost matching jobs
     advisor_bonus = 0
-    advisor_data = _safe_json(getattr(profile, 'advisor_data', None), {})
+    advisor_data = safe_json(getattr(profile, 'advisor_data', None), {})
     if isinstance(advisor_data, dict):
         # Boost if job title matches advisor-recommended roles
         advisor_roles = advisor_data.get("roles_to_consider", [])
@@ -770,14 +734,14 @@ def _score_deep_research(job: Job, profile: Profile) -> int:
     score -= neg_count * 7   # negatives weigh heavier
 
     # Culture alignment with profile values
-    values = _safe_json(profile.values, [])
+    values = safe_json(profile.values, [])
     if values and job.culture_insights:
         culture_lower = job.culture_insights.lower()
         value_hits = sum(1 for v in values if v.lower() in culture_lower)
         score += value_hits * 6
 
     # Growth alignment with profile growth areas
-    growth_areas = _safe_json(profile.growth_areas, [])
+    growth_areas = safe_json(profile.growth_areas, [])
     if growth_areas and job.growth_opportunities:
         growth_lower = job.growth_opportunities.lower()
         growth_hits = sum(1 for g in growth_areas if g.lower() in growth_lower)
@@ -811,7 +775,7 @@ async def score_job_ai(job: Job, profile: Profile, company: Company = None) -> d
         if tiers_down > 0:
             tier_note.append(f"open to roles {tiers_down} level(s) below")
         profile_context.append(f"Seniority search range: {'; '.join(tier_note)} — roles within this range should score seniority 75-85, NOT be penalized as 'stretch'")
-    profile_context.append(f"Location preference: {_safe_json(profile.target_locations, [])}")
+    profile_context.append(f"Location preference: {safe_json(profile.target_locations, [])}")
     profile_context.append(f"Remote preference: {profile.remote_preference}")
     profile_context.append(f"Salary range: ${f'{profile.min_salary:,}' if profile.min_salary else '?'} - ${f'{profile.max_salary:,}' if profile.max_salary else '?'}" if profile.min_salary else "Salary: not specified")
     if profile.profile_summary:
