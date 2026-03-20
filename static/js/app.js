@@ -166,6 +166,8 @@ function showView(name) {
         if (typeof loadSpringTraining === 'function') loadSpringTraining();
         if (typeof loadReporterCorner === 'function') loadReporterCorner();
         if (typeof loadDugoutCharts === 'function') loadDugoutCharts();
+        if (typeof loadBoxScore === 'function') loadBoxScore();
+        if (typeof loadFollowUps === 'function') loadFollowUps();
     }
     if (name === 'jobs') {
         loadSwipeStack();
@@ -6839,6 +6841,118 @@ window.dispatchScout = dispatchScout;
 window.closeDispatchModal = closeDispatchModal;
 window.runDispatch = runDispatch;
 window.ingestDispatchResults = ingestDispatchResults;
+window.loadFollowUps = loadFollowUps;
+window.completeFollowUp = completeFollowUp;
+window.draftFollowUpEmail = draftFollowUpEmail;
+window.loadBoxScore = loadBoxScore;
+
+// ── Follow-Up Reminders ─────────────────────────────────────────────────
+
+async function loadFollowUps() {
+    if (!state.profileId) return;
+    try {
+        const data = await api(`/profiles/${state.profileId}/follow-ups`);
+        const container = document.getElementById('follow-ups-section');
+        if (!container) return;
+        if (!data.follow_ups || data.follow_ups.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        let html = `<div class="section-card">
+            <h3 style="color:var(--jb-bright)">📬 Follow-Ups Due</h3>`;
+        for (const fu of data.follow_ups) {
+            html += `<div class="follow-up-item" style="padding:10px;margin:8px 0;background:var(--jb-bg-secondary);border-radius:8px;border-left:3px solid var(--jb-warning)">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <strong>${esc(fu.job_title)}</strong> at ${esc(fu.company)}
+                        <div style="color:var(--jb-text-2);font-size:12px">${fu.days_stale} days since applied</div>
+                    </div>
+                    <div style="display:flex;gap:6px">
+                        <button class="btn btn-sm btn-primary" onclick="draftFollowUpEmail(${fu.id})">Draft Email</button>
+                        <button class="btn btn-sm btn-secondary" onclick="completeFollowUp(${fu.id})">Done</button>
+                    </div>
+                </div>
+            </div>`;
+        }
+        html += '</div>';
+        container.innerHTML = html;
+    } catch(e) { console.error('Follow-ups error:', e); }
+}
+
+async function completeFollowUp(id) {
+    try {
+        await api(`/follow-ups/${id}/complete`, { method: 'POST' });
+        toast('Follow-up marked complete', 'success');
+        loadFollowUps();
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+async function draftFollowUpEmail(id) {
+    try {
+        toast('Generating follow-up email...', 'info');
+        const data = await api(`/follow-ups/${id}/draft-email`, { method: 'POST' });
+        // Show the draft in a simple modal/alert
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.id = 'followup-draft-modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width:600px">
+                <div class="modal-header">
+                    <h3>Follow-Up Draft</h3>
+                    <button class="modal-close" onclick="document.getElementById('followup-draft-modal')?.remove()">&times;</button>
+                </div>
+                <div class="modal-body" style="max-height:60vh;overflow-y:auto">
+                    <pre style="white-space:pre-wrap;font-family:inherit;color:var(--jb-text-1);line-height:1.6">${esc(data.draft_content)}</pre>
+                    <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="copyToClipboard(\`${data.draft_content.replace(/`/g, '\\`').replace(/\\/g, '\\\\')}\`);toast('Copied to clipboard','success')">Copy to Clipboard</button>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+// ── Box Score Analytics ─────────────────────────────────────────────────
+
+async function loadBoxScore() {
+    if (!state.profileId) return;
+    try {
+        const data = await api(`/profiles/${state.profileId}/box-score`);
+        const container = document.getElementById('box-score-section');
+        if (!container) return;
+
+        const battingAvg = data.batting_avg ? (data.batting_avg * 1000).toFixed(0) : '---';
+
+        let html = `<div class="section-card">
+            <h3 style="color:var(--jb-bright)">📊 Box Score</h3>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:12px;margin-top:12px">
+                <div class="box-stat">
+                    <div class="box-stat-value">${data.total_scouted}</div>
+                    <div class="box-stat-label">Scouted</div>
+                </div>
+                <div class="box-stat">
+                    <div class="box-stat-value">${data.total_shortlisted}</div>
+                    <div class="box-stat-label">Shortlisted</div>
+                </div>
+                <div class="box-stat">
+                    <div class="box-stat-value">${data.total_applied}</div>
+                    <div class="box-stat-label">Applied</div>
+                </div>
+                <div class="box-stat">
+                    <div class="box-stat-value">${data.total_interviews}</div>
+                    <div class="box-stat-label">Interviews</div>
+                </div>
+                <div class="box-stat">
+                    <div class="box-stat-value">${data.total_offers}</div>
+                    <div class="box-stat-label">Offers</div>
+                </div>
+                <div class="box-stat">
+                    <div class="box-stat-value">.${battingAvg}</div>
+                    <div class="box-stat-label">Batting Avg</div>
+                </div>
+            </div>
+        </div>`;
+        container.innerHTML = html;
+    } catch(e) { console.error('Box score error:', e); }
+}
 
 // ── Dispatch Scout ──────────────────────────────────────────────────────
 // Opens a modal with Indeed search URLs; user opens them in their browser,

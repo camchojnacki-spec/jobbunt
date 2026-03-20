@@ -6095,6 +6095,11 @@ select:focus {
     z-index: 0;
 }
 
+/* ── Box Score Stats ── */
+.box-stat { text-align: center; padding: 12px; background: var(--jb-bg-secondary); border-radius: 8px; }
+.box-stat-value { font-size: 24px; font-weight: 700; color: var(--jb-bright); }
+.box-stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--jb-text-2); margin-top: 4px; }
+
 /* ── Activity Charts ── */
 .dugout-chart-section { margin: 28px 0; }
 .dugout-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

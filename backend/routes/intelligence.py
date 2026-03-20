@@ -4,14 +4,14 @@ import json
 import os
 import re
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, SessionLocal
-from backend.models.models import Job, Application, Profile, Company, ProfileQuestion, User, Document, Interview
+from backend.models.models import Job, Application, Profile, Company, ProfileQuestion, User, Document, Interview, FollowUp
 from backend.auth import get_optional_user
 from backend.services.ai import ai_generate, ai_generate_json, get_provider
 from backend.services.enrichment import enrich_company
@@ -1639,3 +1639,217 @@ Return ONLY valid JSON, no other text."""
     db.commit()
 
     return result
+
+
+# ── Follow-Up Reminders ──────────────────────────────────────────────────
+
+@router.get("/profiles/{profile_id}/follow-ups")
+async def get_follow_ups(profile_id: int, db: Session = Depends(get_db)):
+    """Return pending follow-ups, auto-creating them for stale applications."""
+    profile = db.query(Profile).filter(Profile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    now = datetime.utcnow()
+    stale_applied_cutoff = now - timedelta(days=7)
+    stale_interview_cutoff = now - timedelta(days=3)
+
+    # Find stale 'applied' applications (>7 days old)
+    stale_applied = db.query(Application).filter(
+        Application.profile_id == profile_id,
+        Application.pipeline_status == "applied",
+        Application.created_at < stale_applied_cutoff,
+    ).all()
+
+    # Find stale 'interview' applications (no update in 3+ days)
+    stale_interviews = db.query(Application).filter(
+        Application.profile_id == profile_id,
+        Application.pipeline_status == "interview",
+        Application.updated_at < stale_interview_cutoff,
+    ).all()
+
+    stale_apps = stale_applied + stale_interviews
+    created_count = 0
+
+    for app in stale_apps:
+        # Check if a pending follow-up already exists
+        existing_fu = db.query(FollowUp).filter(
+            FollowUp.application_id == app.id,
+            FollowUp.completed == False,
+        ).first()
+        if not existing_fu:
+            fu = FollowUp(
+                application_id=app.id,
+                profile_id=profile_id,
+                follow_up_type="status_check",
+                due_date=now,
+            )
+            db.add(fu)
+            created_count += 1
+
+    if created_count > 0:
+        db.commit()
+
+    # Fetch all pending follow-ups
+    pending = db.query(FollowUp).filter(
+        FollowUp.profile_id == profile_id,
+        FollowUp.completed == False,
+    ).all()
+
+    follow_ups = []
+    for fu in pending:
+        app = db.query(Application).filter(Application.id == fu.application_id).first() if fu.application_id else None
+        job = app.job if app else None
+        days_stale = (now - (app.updated_at or app.created_at)).days if app else 0
+
+        # Generate a brief draft if not already present
+        if not fu.draft_content and job:
+            try:
+                prompt = f"""Write a brief, professional follow-up message (2-3 sentences) for a job application.
+Job title: {job.title}
+Company: {job.company}
+Applied {days_stale} days ago.
+Status: {app.pipeline_status if app else 'unknown'}
+
+Keep it concise and professional. Just the message body, no subject line."""
+                draft = await ai_generate(prompt, max_tokens=200, model_tier="flash")
+                if draft:
+                    fu.draft_content = draft.strip()
+            except Exception as e:
+                logger.warning(f"Failed to generate follow-up draft: {e}")
+
+        follow_ups.append({
+            "id": fu.id,
+            "application_id": fu.application_id,
+            "job_title": job.title if job else "Unknown",
+            "company": job.company if job else "Unknown",
+            "days_stale": days_stale,
+            "follow_up_type": fu.follow_up_type,
+            "due_date": fu.due_date.isoformat() if fu.due_date else None,
+            "draft_content": fu.draft_content,
+            "pipeline_status": app.pipeline_status if app else None,
+        })
+
+    if created_count > 0:
+        db.commit()  # Save any generated drafts
+
+    return {"follow_ups": follow_ups, "auto_created": created_count}
+
+
+@router.post("/follow-ups/{follow_up_id}/complete")
+async def complete_follow_up(follow_up_id: int, db: Session = Depends(get_db)):
+    """Mark a follow-up as completed."""
+    fu = db.query(FollowUp).filter(FollowUp.id == follow_up_id).first()
+    if not fu:
+        raise HTTPException(404, "Follow-up not found")
+    fu.completed = True
+    fu.completed_at = datetime.utcnow()
+    db.commit()
+    return {"status": "completed", "id": fu.id}
+
+
+@router.post("/follow-ups/{follow_up_id}/draft-email")
+async def draft_follow_up_email(follow_up_id: int, db: Session = Depends(get_db)):
+    """Generate a detailed follow-up email using AI."""
+    fu = db.query(FollowUp).filter(FollowUp.id == follow_up_id).first()
+    if not fu:
+        raise HTTPException(404, "Follow-up not found")
+
+    app = db.query(Application).filter(Application.id == fu.application_id).first() if fu.application_id else None
+    job = app.job if app else None
+    profile = db.query(Profile).filter(Profile.id == fu.profile_id).first()
+    days_stale = (datetime.utcnow() - (app.updated_at or app.created_at)).days if app else 0
+
+    candidate_name = profile.name if profile else "the candidate"
+    prompt = f"""Write a professional follow-up email for a job application.
+
+Candidate: {candidate_name}
+Job title: {job.title if job else 'Unknown'}
+Company: {job.company if job else 'Unknown'}
+Applied {days_stale} days ago
+Current status: {app.pipeline_status if app else 'unknown'}
+Follow-up type: {fu.follow_up_type}
+
+Write a complete, professional email with:
+- A clear subject line (on its own line prefixed with "Subject: ")
+- A warm but professional greeting
+- A brief reminder of the application
+- Expression of continued interest
+- A polite request for an update
+- Professional sign-off using the candidate's name
+
+Keep it concise (under 200 words) and avoid being pushy."""
+
+    draft = await ai_generate(prompt, max_tokens=500, model_tier="flash")
+    if not draft:
+        raise HTTPException(500, "AI generation failed. Try again.")
+
+    fu.draft_content = draft.strip()
+    db.commit()
+
+    return {"id": fu.id, "draft_content": fu.draft_content}
+
+
+# ── Box Score Analytics ──────────────────────────────────────────────────
+
+@router.get("/profiles/{profile_id}/box-score")
+async def get_box_score(profile_id: int, db: Session = Depends(get_db)):
+    """Return comprehensive analytics for the profile's job search."""
+    profile = db.query(Profile).filter(Profile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    now = datetime.utcnow()
+    seven_days_ago = now - timedelta(days=7)
+
+    jobs = db.query(Job).filter(Job.profile_id == profile_id).all()
+    applications = db.query(Application).filter(Application.profile_id == profile_id).all()
+
+    total_scouted = len(jobs)
+    total_shortlisted = sum(1 for j in jobs if j.status in ("liked", "shortlisted"))
+    total_applied = len(applications)
+    total_interviews = sum(1 for a in applications if a.pipeline_status in ("interview", "screening"))
+    total_offers = sum(1 for a in applications if a.pipeline_status == "offer")
+
+    batting_avg = total_offers / total_applied if total_applied > 0 else 0
+    responded = sum(1 for a in applications if a.pipeline_status not in ("applied", "no_response"))
+    response_rate = responded / total_applied if total_applied > 0 else 0
+
+    scores = [j.match_score for j in jobs if j.match_score is not None and j.match_score > 0]
+    avg_score = sum(scores) / len(scores) if scores else 0
+
+    # Source breakdown
+    source_breakdown = {}
+    for j in jobs:
+        src = j.source or "unknown"
+        source_breakdown[src] = source_breakdown.get(src, 0) + 1
+
+    # Score distribution
+    buckets = {"0-20": 0, "21-40": 0, "41-60": 0, "61-80": 0, "81-100": 0}
+    for s in scores:
+        if s <= 20:
+            buckets["0-20"] += 1
+        elif s <= 40:
+            buckets["21-40"] += 1
+        elif s <= 60:
+            buckets["41-60"] += 1
+        elif s <= 80:
+            buckets["61-80"] += 1
+        else:
+            buckets["81-100"] += 1
+
+    recent_activity = sum(1 for j in jobs if j.created_at and j.created_at >= seven_days_ago)
+
+    return {
+        "total_scouted": total_scouted,
+        "total_shortlisted": total_shortlisted,
+        "total_applied": total_applied,
+        "total_interviews": total_interviews,
+        "total_offers": total_offers,
+        "batting_avg": round(batting_avg, 4),
+        "response_rate": round(response_rate, 4),
+        "avg_score": round(avg_score, 1),
+        "source_breakdown": source_breakdown,
+        "score_distribution": buckets,
+        "recent_activity": recent_activity,
+    }
