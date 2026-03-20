@@ -18,11 +18,11 @@ logger = logging.getLogger(__name__)
 # ── Model mapping ─────────────────────────────────────────────────────────
 
 GEMINI_MODELS = {
-    "flash":    "gemini-2.5-flash-lite",
+    "flash":    "gemini-3.1-flash-lite-preview",
     "balanced": "gemini-2.5-flash",
     "deep":     "gemini-2.5-pro",
     # Legacy aliases
-    "fast":     "gemini-2.5-flash-lite",
+    "fast":     "gemini-3.1-flash-lite-preview",
     "smart":    "gemini-2.5-flash",
 }
 
