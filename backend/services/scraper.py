@@ -1507,6 +1507,7 @@ def _generate_tier_variants(base_roles: list[str], seniority_level: str, tiers_d
 
 _google_jobs_call_count = 0  # Track calls per search session to limit volume
 _serpapi_call_count = 0  # Track SerpAPI calls per session to avoid exhausting quota
+_serpapi_max_calls = 20  # Dynamic limit: 20 local, 40 on Cloud Run
 
 async def search_google_jobs(query: str, location: str, limit: int = 25) -> list[dict]:
     """Search Google Jobs — aggregates Indeed, LinkedIn, Glassdoor, ZipRecruiter, etc.
@@ -1636,10 +1637,11 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
     Indeed, LinkedIn, Glassdoor, ZipRecruiter, and many more sources.
     Rate limited to 5 calls per search session to avoid quota exhaustion.
     """
-    global _serpapi_call_count
+    global _serpapi_call_count, _serpapi_max_calls
     _serpapi_call_count += 1
-    if _serpapi_call_count > 20:
-        logger.info(f"SerpAPI: skipping call #{_serpapi_call_count} (max 20 per session to preserve quota)")
+    max_calls = getattr(search_serpapi_google_jobs, '_max', None) or globals().get('_serpapi_max_calls', 20)
+    if _serpapi_call_count > max_calls:
+        logger.info(f"SerpAPI: skipping call #{_serpapi_call_count} (max {max_calls} per session to preserve quota)")
         return []
 
     api_key = os.environ.get("SERPAPI_KEY", "") or _get_source_config().get("serpapi", {}).get("api_key", "")
@@ -1675,7 +1677,8 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
             for page_start in [0, 10]:
                 if page_start > 0:
                     _serpapi_call_count += 1
-                    if _serpapi_call_count > 20:
+                    max_calls = globals().get('_serpapi_max_calls', 20)
+                    if _serpapi_call_count > max_calls:
                         logger.info("SerpAPI: skipping page 2 (quota limit)")
                         break
                 params = {
@@ -1973,9 +1976,10 @@ async def _search_with_fallback(source_key: str, query: str, location: str, limi
     except Exception as e:
         _record_source_failure(source_key, str(e))
 
-    # Try Google/DDG fallback if configured
+    # Try Google/DDG fallback if configured (skip on Cloud Run — always 429)
+    is_cloud = os.environ.get("ENV") == "production" or os.environ.get("K_SERVICE")
     fallback_site = source_config.get("fallback_site")
-    if fallback_site:
+    if fallback_site and not is_cloud:
         logger.info(f"[{source_key}] Trying search engine fallback via site:{fallback_site}")
         try:
             results = await _google_site_search(fallback_site, query, location, limit, source_key)
@@ -2261,11 +2265,20 @@ async def search_all_sources(profile: Profile, sources: list[str] | None = None,
         negative_keywords = _build_negative_keywords(profile)
 
     # Determine which sources to search
+    is_cloud = os.environ.get("ENV") == "production" or os.environ.get("K_SERVICE")  # Cloud Run detection
     if sources:
         active_sources = [s for s in sources if s in AVAILABLE_SOURCES]
     else:
         region = _detect_region(target_locations)
         active_sources = REGION_SOURCES.get(region, REGION_SOURCES["global"])
+
+    if is_cloud:
+        # Cloud Run IPs get blocked by Google (429), Indeed (403), and most scrapers.
+        # Only SerpAPI (API-based), Careerjet, Adzuna, and JobBank reliably work.
+        # Remove sources that depend on Google site-search fallback from Cloud Run.
+        cloud_blocked = {"gcjobs", "talent"}  # These rely on Google/DDG fallbacks which always 429
+        active_sources = [s for s in active_sources if s not in cloud_blocked]
+        logger.info(f"Cloud Run detected — removed unreliable sources, using: {active_sources}")
 
     logger.info(f"Multi-source search: sources={active_sources}, roles={len(target_roles)}, locations={len(target_locations[:2])}")
 
@@ -2285,6 +2298,10 @@ async def search_all_sources(profile: Profile, sources: list[str] | None = None,
     global _google_jobs_call_count, _serpapi_call_count
     _google_jobs_call_count = 0
     _serpapi_call_count = 0
+
+    # On Cloud Run, SerpAPI is the primary reliable source — allow more calls
+    global _serpapi_max_calls
+    _serpapi_max_calls = 40 if is_cloud else 20
 
     all_jobs = []
     source_result_counts: dict[str, int] = {}  # Track per-source totals
