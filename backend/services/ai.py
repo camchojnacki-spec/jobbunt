@@ -233,6 +233,70 @@ async def ai_generate_json(prompt: str, max_tokens: int = 1500, model_tier: str 
     return None
 
 
+async def ai_generate_stream(prompt: str, max_tokens: int = 1500, model_tier: str = "fast"):
+    """Stream text from whatever AI provider is available.
+
+    Yields text chunks as they arrive. No caching (streaming is for long-running
+    requests where progressive feedback matters more than cache hits).
+    """
+    provider = get_provider()
+
+    if provider == "anthropic":
+        async for chunk in _anthropic_generate_stream(prompt, max_tokens, model_tier):
+            yield chunk
+    elif provider == "gemini":
+        async for chunk in _gemini_generate_stream(prompt, max_tokens, model_tier):
+            yield chunk
+    else:
+        yield ""
+
+
+async def _anthropic_generate_stream(prompt: str, max_tokens: int, model_tier: str):
+    """Stream from Anthropic Claude API."""
+    try:
+        client = _get_anthropic_client()
+        model = ANTHROPIC_MODELS.get(model_tier, ANTHROPIC_MODELS["flash"])
+        async with client.messages.stream(
+            model=model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
+    except Exception as e:
+        logger.error(f"Anthropic streaming error: {e}")
+        yield ""
+
+
+async def _gemini_generate_stream(prompt: str, max_tokens: int, model_tier: str):
+    """Stream from Google Gemini API."""
+    try:
+        client = _get_gemini_client()
+        model_name = GEMINI_MODELS.get(model_tier, GEMINI_MODELS["flash"])
+        thinking_budget = THINKING_BUDGETS.get(model_tier, 0)
+
+        config = {"max_output_tokens": max_tokens}
+        if thinking_budget > 0:
+            config["thinking_config"] = {"thinking_budget": thinking_budget}
+            if model_tier == "deep":
+                config["max_output_tokens"] = max(max_tokens, 8192)
+            else:
+                config["max_output_tokens"] = max(max_tokens, 4096)
+
+        logger.info(f"Gemini stream: model={model_name}, tier={model_tier}, max_tokens={config['max_output_tokens']}")
+
+        async for chunk in await client.aio.models.generate_content_stream(
+            model=model_name,
+            contents=prompt,
+            config=config,
+        ):
+            if chunk.text:
+                yield chunk.text
+    except Exception as e:
+        logger.error(f"Gemini streaming error ({model_tier}): {e}")
+        yield ""
+
+
 async def _anthropic_generate(prompt: str, max_tokens: int, model_tier: str) -> str:
     """Use Anthropic Claude API."""
     try:

@@ -7,13 +7,14 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, SessionLocal
 from backend.models.models import Job, Application, Profile, Company, ProfileQuestion, User, Document, Interview, FollowUp
 from backend.auth import get_optional_user
-from backend.services.ai import ai_generate, ai_generate_json, get_provider
+from backend.services.ai import ai_generate, ai_generate_json, ai_generate_stream, get_provider
 from backend.services.enrichment import enrich_company
 from backend.tasks import run_background, find_running_task
 from backend.utils import safe_json, safe_json_list
@@ -205,16 +206,17 @@ async def _do_search_advisor(profile_id: int):
         db.close()
 
 
-async def _build_search_advisor(profile_id: int, profile, db):
-    """Inner logic for search advisor, wrapped so caller can catch all errors."""
-    # ── Sanity checks ──
+def _build_advisor_prompt(profile_id: int, profile, db) -> str | None:
+    """Build the search advisor prompt from profile + job data.
+
+    Returns the prompt string, or None if insufficient data.
+    """
     target_roles = safe_json(profile.target_roles, [])
     target_locations = safe_json(profile.target_locations, [])
     profile_skills = safe_json(profile.skills, [])
 
-    # Need at least some profile data to give meaningful advice
     if not target_roles and not profile_skills and not profile.resume_text:
-        return {"advisor": None, "reason": "Add target roles, skills, or upload a resume before requesting analysis"}
+        return None
 
     all_jobs = db.query(Job).filter(Job.profile_id == profile_id).all()
 
@@ -223,7 +225,6 @@ async def _build_search_advisor(profile_id: int, profile, db):
     high_score = [j for j in all_jobs if (j.match_score or 0) >= 65]
     low_score = [j for j in all_jobs if (j.match_score or 0) < 40]
 
-    # Build job patterns summary
     liked_summary = "\n".join([
         f"  - {j.title} at {j.company} (score: {j.match_score or 0:.0f}, seniority: {j.seniority_level or '?'})"
         for j in sorted(liked, key=lambda x: -(x.match_score or 0))[:10]
@@ -234,17 +235,14 @@ async def _build_search_advisor(profile_id: int, profile, db):
         for j in sorted(passed, key=lambda x: -(x.match_score or 0))[:8]
     ]) if passed else "None yet"
 
-    # Score distribution
     scores = [j.match_score for j in all_jobs if j.match_score]
     avg_score = sum(scores) / len(scores) if scores else 0
 
-    # Seniority distribution in found jobs
     seniority_dist = {}
     for j in all_jobs:
         lvl = (j.seniority_level or "unknown").lower()
         seniority_dist[lvl] = seniority_dist.get(lvl, 0) + 1
 
-    # Skills frequency in ALL jobs vs profile
     job_skills_freq = {}
     for j in all_jobs:
         text = f"{j.description or ''} {j.requirements or ''}".lower()
@@ -252,7 +250,6 @@ async def _build_search_advisor(profile_id: int, profile, db):
             if skill.lower() in text:
                 job_skills_freq[skill] = job_skills_freq.get(skill, 0) + 1
 
-    # Skills frequency in HIGH-scoring jobs (65+)
     high_score_skills_freq = {}
     for j in high_score:
         text = f"{j.description or ''} {j.requirements or ''}".lower()
@@ -260,22 +257,19 @@ async def _build_search_advisor(profile_id: int, profile, db):
             if skill.lower() in text:
                 high_score_skills_freq[skill] = high_score_skills_freq.get(skill, 0) + 1
 
-    # What high-scoring jobs have in common vs low-scoring ones
     high_score_titles = [j.title for j in high_score[:10]]
     low_score_titles = [j.title for j in low_score[:10]]
     high_score_companies = [j.company for j in high_score[:10]]
 
-    # Gather answered profile questions for context
     answered_qs = db.query(ProfileQuestion).filter(
         ProfileQuestion.profile_id == profile_id,
         ProfileQuestion.is_answered == True,
     ).all()
     qa_context = "\n".join([f"Q: {q.question}\nA: {q.answer}" for q in answered_qs]) if answered_qs else "None yet"
 
-    # Additional info from profile
     additional = safe_json(profile.additional_info, {})
 
-    prompt = f"""You are a senior executive career coach with deep expertise in career trajectory analysis, ATS optimization, and strategic job search planning.
+    return f"""You are a senior executive career coach with deep expertise in career trajectory analysis, ATS optimization, and strategic job search planning.
 Provide an HONEST, data-driven assessment with ACTIONABLE paths forward. Be direct but constructive — your job is to help them find the RIGHT role AND create a concrete plan to get there.
 
 Consider the candidate's FULL career arc: where they started, how they progressed, and where they're naturally positioned to go next. Analyze patterns in the jobs they liked vs passed to understand their true preferences (which may differ from stated preferences).
@@ -394,6 +388,13 @@ Return JSON:
 
 BE SPECIFIC: Reference their actual resume content, job titles, companies, and data. Don't give generic career advice."""
 
+
+async def _build_search_advisor(profile_id: int, profile, db):
+    """Inner logic for search advisor, wrapped so caller can catch all errors."""
+    prompt = _build_advisor_prompt(profile_id, profile, db)
+    if prompt is None:
+        return {"advisor": None, "reason": "Add target roles, skills, or upload a resume before requesting analysis"}
+
     try:
         advisor = await asyncio.wait_for(
             ai_generate_json(prompt, max_tokens=4000, model_tier="deep"),
@@ -456,6 +457,126 @@ BE SPECIFIC: Reference their actual resume content, job titles, companies, and d
         logger.warning(f"Failed to save advisor questions: {e}")
 
     return {"advisor": advisor}
+
+
+# ── Search Advisor (Streaming SSE) ───────────────────────────────────
+
+@router.get("/profiles/{profile_id}/search-advisor-stream")
+async def get_search_advisor_stream(profile_id: int, db: Session = Depends(get_db)):
+    """Streaming variant of the search advisor — returns SSE chunks as AI generates."""
+    profile = db.query(Profile).filter(Profile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    if get_provider() == "none":
+        raise HTTPException(503, "No AI provider configured")
+
+    prompt = _build_advisor_prompt(profile_id, profile, db)
+    if prompt is None:
+        raise HTTPException(400, "Add target roles, skills, or upload a resume before requesting analysis")
+
+    async def event_stream():
+        full_text = ""
+        try:
+            async for chunk in ai_generate_stream(prompt, max_tokens=4000, model_tier="deep"):
+                if chunk:
+                    full_text += chunk
+                    # SSE format: data: <payload>\n\n
+                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+
+            # Final event with the complete text for client-side JSON parsing
+            yield f"data: {json.dumps({'done': True, 'full_text': full_text})}\n\n"
+
+            # Post-processing: parse JSON and save advisor data (same as non-streaming)
+            try:
+                _save_advisor_results(profile_id, full_text)
+            except Exception as e:
+                logger.warning(f"Failed to save streaming advisor results: {e}")
+
+        except Exception as e:
+            logger.error(f"Search advisor stream error: {e}", exc_info=True)
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _save_advisor_results(profile_id: int, full_text: str):
+    """Parse the streamed AI text as JSON and save advisor data + questions to the DB."""
+    import re as _re
+    db = SessionLocal()
+    try:
+        # Parse JSON from the full text (same logic as ai_generate_json)
+        cleaned = full_text.strip()
+        fence_match = _re.search(r"```(?:json)?\s*\n([\s\S]*?)\n\s*```", cleaned)
+        if fence_match:
+            cleaned = fence_match.group(1).strip()
+        else:
+            cleaned = _re.sub(r"^```(?:json)?\s*\n?", "", cleaned)
+            cleaned = _re.sub(r"\n?```\s*$", "", cleaned)
+            cleaned = cleaned.strip()
+
+        advisor = None
+        for attempt_text in [cleaned, full_text.strip()]:
+            try:
+                advisor = json.loads(attempt_text)
+                break
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        if advisor is None:
+            json_match = _re.search(r"(\{[\s\S]*\})", cleaned)
+            if json_match:
+                try:
+                    advisor = json.loads(json_match.group(1))
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+        if not isinstance(advisor, dict) or "overall_assessment" not in advisor:
+            return
+
+        profile = db.query(Profile).filter(Profile.id == profile_id).first()
+        if not profile:
+            return
+
+        # Cache advisor data on profile for scorer
+        advisor_cache = {}
+        for key in ("roles_to_consider", "keywords_for_ats", "industry_targets",
+                     "companies_to_target", "skills_to_highlight", "skills_to_develop"):
+            if advisor.get(key):
+                advisor_cache[key] = advisor[key]
+        if advisor_cache:
+            profile.advisor_data = json.dumps(advisor_cache)
+            db.commit()
+
+        # Auto-create profile questions from advisor suggestions
+        if advisor.get("questions_to_explore"):
+            for q_text in advisor["questions_to_explore"][:5]:
+                existing = db.query(ProfileQuestion).filter(
+                    ProfileQuestion.profile_id == profile_id,
+                    ProfileQuestion.question == q_text,
+                ).first()
+                if not existing:
+                    pq = ProfileQuestion(
+                        profile_id=profile_id,
+                        question=q_text,
+                        category="advisor",
+                        priority=8,
+                    )
+                    db.add(pq)
+            db.commit()
+    except Exception as e:
+        logger.warning(f"_save_advisor_results error: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
 
 @router.post("/profiles/{profile_id}/apply-advisor-suggestion")

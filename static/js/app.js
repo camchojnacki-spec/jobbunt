@@ -1545,10 +1545,12 @@ async function quickAction(jobId, index, action) {
     const job = state.swipeStack.find(j => j.id === jobId);
     if (!job) return;
 
-    // B06 fix: Confirm before applying
+    // B06 fix: Confirm before applying (returns false, true, or cover letter string)
+    let coverLetterText = null;
     if (action === 'like') {
         const confirmed = await showApplyConfirmation(job);
         if (!confirmed) return;
+        if (typeof confirmed === 'string') coverLetterText = confirmed;
     }
 
     // Remove from stack visually
@@ -1584,6 +1586,18 @@ async function quickAction(jobId, index, action) {
                 toast(`Application ready for ${job.title}!`, 'success');
             } else {
                 toast(`Applied to ${job.title}`, 'success');
+            }
+
+            // Save cover letter to the application if one was generated
+            if (coverLetterText && result.application?.id) {
+                try {
+                    await api(`/applications/${result.application.id}`, {
+                        method: 'PUT',
+                        body: { cover_letter: coverLetterText },
+                    });
+                } catch (e) {
+                    console.warn('Failed to save cover letter:', e);
+                }
             }
         }
 
@@ -2102,10 +2116,12 @@ async function swipeAction(action) {
         if (!job) { toast('Select a job first', 'info'); return; }
     }
 
-    // B06 fix: Confirm before applying
+    // B06 fix: Confirm before applying (returns false, true, or cover letter string)
+    let coverLetterText = null;
     if (action === 'like') {
         const confirmed = await showApplyConfirmation(job);
         if (!confirmed) return;
+        if (typeof confirmed === 'string') coverLetterText = confirmed;
     }
 
     // Now perform the visual updates after confirmation
@@ -2150,6 +2166,18 @@ async function swipeAction(action) {
                 toast(`Application ready for ${job.title}!`, 'success');
             } else {
                 toast(`Applied to ${job.title}`, 'success');
+            }
+
+            // Save cover letter to the application if one was generated
+            if (coverLetterText && result.application?.id) {
+                try {
+                    await api(`/applications/${result.application.id}`, {
+                        method: 'PUT',
+                        body: { cover_letter: coverLetterText },
+                    });
+                } catch (e) {
+                    console.warn('Failed to save cover letter:', e);
+                }
             }
         }
 
@@ -3061,7 +3089,7 @@ function setActionButtonsEnabled(enabled) {
     }
 }
 
-// B06 fix: Apply confirmation dialog
+// B06 fix: Apply confirmation dialog with cover letter generation
 function showApplyConfirmation(job) {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
@@ -3075,6 +3103,25 @@ function showApplyConfirmation(job) {
                     ${job.location ? `<span class="apply-confirm-loc">${esc(job.location)}</span>` : ''}
                     ${job.match_score ? `<span class="score-badge" style="background:${job.match_score >= 70 ? 'var(--green)' : job.match_score >= 40 ? 'var(--orange)' : 'var(--red)'}">${job.match_score}</span>` : ''}
                 </div>
+                <div class="apply-cover-letter-section">
+                    <button class="btn btn-secondary" id="generate-cover-letter" style="width:100%;margin:12px 0 8px;display:flex;align-items:center;justify-content:center;gap:6px">
+                        <span class="material-icons" style="font-size:18px">auto_awesome</span>
+                        Generate Cover Letter
+                    </button>
+                    <div id="cover-letter-status" style="display:none;text-align:center;padding:12px;color:var(--text-dim);font-size:13px">
+                        <span class="spinner" style="display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:6px"></span>
+                        Generating tailored cover letter...
+                    </div>
+                    <textarea id="cover-letter-text" style="display:none;width:100%;min-height:200px;max-height:400px;resize:vertical;background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:13px;line-height:1.5;font-family:inherit;margin:8px 0" placeholder="Your cover letter will appear here..."></textarea>
+                    <div id="cover-letter-actions" style="display:none;text-align:right;margin-bottom:4px">
+                        <button class="btn btn-secondary" id="regenerate-cover-letter" style="font-size:12px;padding:4px 10px">
+                            <span class="material-icons" style="font-size:14px;vertical-align:middle;margin-right:2px">refresh</span>Regenerate
+                        </button>
+                        <button class="btn btn-secondary" id="copy-cover-letter" style="font-size:12px;padding:4px 10px;margin-left:4px">
+                            <span class="material-icons" style="font-size:14px;vertical-align:middle;margin-right:2px">content_copy</span>Copy
+                        </button>
+                    </div>
+                </div>
                 <p style="color:var(--text-dim);font-size:13px;margin:12px 0">This will move the job to your Applied pipeline. You can track it from the Applied tab.</p>
                 <div class="apply-confirm-actions">
                     <button class="btn btn-secondary" id="apply-cancel">Cancel</button>
@@ -3082,7 +3129,79 @@ function showApplyConfirmation(job) {
                 </div>
             </div>`;
         document.body.appendChild(overlay);
-        overlay.querySelector('#apply-confirm').addEventListener('click', () => { overlay.remove(); resolve(true); });
+
+        // Store cover letter text to pass back with the resolution
+        let coverLetterText = '';
+
+        // Generate cover letter handler
+        async function generateCoverLetter() {
+            const btn = overlay.querySelector('#generate-cover-letter');
+            const status = overlay.querySelector('#cover-letter-status');
+            const textarea = overlay.querySelector('#cover-letter-text');
+            const actions = overlay.querySelector('#cover-letter-actions');
+
+            btn.style.display = 'none';
+            status.style.display = 'block';
+
+            try {
+                const result = await api(`/jobs/${job.id}/generate-cover-letter`, { method: 'POST' });
+                coverLetterText = result.cover_letter || '';
+                textarea.value = coverLetterText;
+                status.style.display = 'none';
+                textarea.style.display = 'block';
+                actions.style.display = 'block';
+            } catch (e) {
+                status.innerHTML = `<span style="color:var(--red)">Failed to generate cover letter: ${esc(e.message)}</span>`;
+                btn.style.display = 'flex';
+                btn.textContent = 'Retry';
+            }
+        }
+
+        overlay.querySelector('#generate-cover-letter').addEventListener('click', generateCoverLetter);
+
+        // Regenerate handler
+        overlay.querySelector('#regenerate-cover-letter').addEventListener('click', async () => {
+            const status = overlay.querySelector('#cover-letter-status');
+            const textarea = overlay.querySelector('#cover-letter-text');
+            const actions = overlay.querySelector('#cover-letter-actions');
+
+            textarea.style.display = 'none';
+            actions.style.display = 'none';
+            status.style.display = 'block';
+            status.innerHTML = '<span class="spinner" style="display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:6px"></span>Regenerating...';
+
+            try {
+                const result = await api(`/jobs/${job.id}/generate-cover-letter`, { method: 'POST' });
+                coverLetterText = result.cover_letter || '';
+                textarea.value = coverLetterText;
+                status.style.display = 'none';
+                textarea.style.display = 'block';
+                actions.style.display = 'block';
+            } catch (e) {
+                status.innerHTML = `<span style="color:var(--red)">Failed: ${esc(e.message)}</span>`;
+                textarea.style.display = 'block';
+                actions.style.display = 'block';
+            }
+        });
+
+        // Copy handler
+        overlay.querySelector('#copy-cover-letter').addEventListener('click', () => {
+            const textarea = overlay.querySelector('#cover-letter-text');
+            navigator.clipboard.writeText(textarea.value).then(() => {
+                toast('Cover letter copied to clipboard', 'success');
+            });
+        });
+
+        // Track edits in textarea
+        overlay.querySelector('#cover-letter-text').addEventListener('input', (e) => {
+            coverLetterText = e.target.value;
+        });
+
+        // Confirm: resolve with cover letter text (or true if no cover letter)
+        overlay.querySelector('#apply-confirm').addEventListener('click', () => {
+            overlay.remove();
+            resolve(coverLetterText || true);
+        });
         overlay.querySelector('#apply-cancel').addEventListener('click', () => { overlay.remove(); resolve(false); });
         overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
         document.addEventListener('keydown', function escHandler(e) {
@@ -4528,29 +4647,146 @@ async function loadSearchAdvisor() {
     content.dataset.loaded = 'true';
 
     try {
-        const data = await api(`/profiles/${state.profileId}/search-advisor`);
-        renderSearchAdvisor(data);
-    } catch (e) {
-        content.innerHTML = `<div class="empty-state">
-            <div class="empty-state-art">
-                <svg width="200" height="160" viewBox="0 0 200 160" fill="none">
-                    <g transform="translate(60, 30)">
-                        <line x1="20" y1="80" x2="70" y2="30" stroke="#C4962C" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
-                        <circle cx="20" cy="80" r="5" fill="#E8E6E1" opacity="0.08"/>
-                        <path d="M75 25 Q85 20 80 10" stroke="#E8E6E1" stroke-width="1" opacity="0.1" fill="none"/>
-                        <path d="M78 30 Q90 28 88 18" stroke="#E8E6E1" stroke-width="0.8" opacity="0.08" fill="none"/>
-                        <path d="M72 22 Q78 12 72 6" stroke="#E8E6E1" stroke-width="0.8" opacity="0.06" fill="none"/>
-                    </g>
-                    <circle cx="80" cy="120" r="4" fill="#E8E6E1" opacity="0.04"/>
-                    <circle cx="90" cy="116" r="6" fill="#E8E6E1" opacity="0.03"/>
-                    <circle cx="100" cy="120" r="5" fill="#E8E6E1" opacity="0.03"/>
-                </svg>
+        // Use streaming SSE endpoint for progressive feedback
+        const streamUrl = `${API}/profiles/${state.profileId}/search-advisor-stream`;
+        const response = await fetch(streamUrl);
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(errText);
+        }
+
+        // Show streaming text area
+        content.innerHTML = `<div class="advisor-stream-container">
+            <style>@keyframes advisor-dot-pulse{0%,100%{opacity:.3}50%{opacity:1}}</style>
+            <div class="advisor-stream-header" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                <div class="advisor-stream-dot" style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:advisor-dot-pulse 1.2s ease-in-out infinite"></div>
+                <span style="color:var(--text-dim);font-size:13px">Coaching staff is analyzing your search...</span>
             </div>
-            <h2>Swing and a miss</h2><p>${esc(e.message)} — try again in a moment</p>
+            <pre id="advisor-stream-text" style="white-space:pre-wrap;word-wrap:break-word;font-family:var(--font);font-size:13px;line-height:1.6;color:var(--jb-text-2);background:var(--jb-bg-secondary);border:1px solid var(--jb-border);border-radius:8px;padding:16px;max-height:500px;overflow-y:auto"></pre>
         </div>`;
+
+        const streamText = document.getElementById('advisor-stream-text');
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Process SSE lines from buffer
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // keep incomplete line in buffer
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                try {
+                    const payload = JSON.parse(line.slice(6));
+
+                    if (payload.error) {
+                        throw new Error(payload.error);
+                    }
+
+                    if (payload.chunk) {
+                        fullText += payload.chunk;
+                        if (streamText) {
+                            streamText.textContent = fullText;
+                            streamText.scrollTop = streamText.scrollHeight;
+                        }
+                    }
+
+                    if (payload.done) {
+                        fullText = payload.full_text || fullText;
+                        // Parse JSON and render structured view
+                        const advisor = _parseAdvisorJSON(fullText);
+                        if (advisor) {
+                            renderSearchAdvisor({ advisor });
+                        } else {
+                            // Could not parse — show raw text
+                            content.innerHTML = `<div class="advisor-assessment">
+                                <div class="advisor-assessment-text" style="white-space:pre-wrap">${esc(fullText)}</div>
+                            </div>`;
+                        }
+                    }
+                } catch (parseErr) {
+                    if (parseErr.message && !parseErr.message.includes('JSON')) {
+                        throw parseErr;
+                    }
+                }
+            }
+        }
+
+        // If stream ended without a done event, try to parse whatever we have
+        if (fullText && !content.querySelector('.advisor-assessment, .advisor-top-row')) {
+            const advisor = _parseAdvisorJSON(fullText);
+            if (advisor) {
+                renderSearchAdvisor({ advisor });
+            }
+        }
+
+    } catch (e) {
+        // Fallback: try the original non-streaming endpoint
+        try {
+            const data = await api(`/profiles/${state.profileId}/search-advisor`);
+            renderSearchAdvisor(data);
+        } catch (fallbackErr) {
+            content.innerHTML = `<div class="empty-state">
+                <div class="empty-state-art">
+                    <svg width="200" height="160" viewBox="0 0 200 160" fill="none">
+                        <g transform="translate(60, 30)">
+                            <line x1="20" y1="80" x2="70" y2="30" stroke="#C4962C" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+                            <circle cx="20" cy="80" r="5" fill="#E8E6E1" opacity="0.08"/>
+                            <path d="M75 25 Q85 20 80 10" stroke="#E8E6E1" stroke-width="1" opacity="0.1" fill="none"/>
+                            <path d="M78 30 Q90 28 88 18" stroke="#E8E6E1" stroke-width="0.8" opacity="0.08" fill="none"/>
+                            <path d="M72 22 Q78 12 72 6" stroke="#E8E6E1" stroke-width="0.8" opacity="0.06" fill="none"/>
+                        </g>
+                        <circle cx="80" cy="120" r="4" fill="#E8E6E1" opacity="0.04"/>
+                        <circle cx="90" cy="116" r="6" fill="#E8E6E1" opacity="0.03"/>
+                        <circle cx="100" cy="120" r="5" fill="#E8E6E1" opacity="0.03"/>
+                    </svg>
+                </div>
+                <h2>Swing and a miss</h2><p>${esc(fallbackErr.message)} — try again in a moment</p>
+            </div>`;
+        }
     } finally {
         setButtonLoading(btn, false);
     }
+}
+
+function _parseAdvisorJSON(text) {
+    /** Try to extract a valid advisor JSON object from AI-generated text. */
+    let cleaned = text.trim();
+
+    // Strip markdown code fences
+    const fenceMatch = cleaned.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
+    if (fenceMatch) {
+        cleaned = fenceMatch[1].trim();
+    } else {
+        cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+    }
+
+    // Try direct parse
+    for (const attempt of [cleaned, text.trim()]) {
+        try {
+            const parsed = JSON.parse(attempt);
+            if (parsed && typeof parsed === 'object' && parsed.overall_assessment) return parsed;
+        } catch {}
+    }
+
+    // Try extracting a JSON object
+    try {
+        const objMatch = cleaned.match(/(\{[\s\S]*\})/);
+        if (objMatch) {
+            const parsed = JSON.parse(objMatch[1]);
+            if (parsed && typeof parsed === 'object' && parsed.overall_assessment) return parsed;
+        }
+    } catch {}
+
+    return null;
 }
 
 function renderSearchAdvisor(data) {

@@ -116,6 +116,8 @@ async def update_application(app_id: int, data: dict = Body(...), db: Session = 
         application.pipeline_status = data["pipeline_status"]
     if "notes" in data:
         application.notes = data["notes"]
+    if "cover_letter" in data:
+        application.cover_letter = data["cover_letter"]
     db.commit()
     return _application_dict(application)
 

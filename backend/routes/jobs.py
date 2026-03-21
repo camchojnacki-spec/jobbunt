@@ -16,7 +16,7 @@ from backend.auth import get_optional_user
 from backend.services.scraper import search_all_sources, save_scraped_jobs
 from backend.services.scorer import score_job_multidim, score_and_update_job, score_and_update_job_ai
 from backend.services.agent import start_application, process_application
-from backend.services.ai import ai_generate_json
+from backend.services.ai import ai_generate, ai_generate_json
 from backend.services.enrichment import enrich_job, analyze_profile
 from backend.services.browser_scraper import build_search_urls, get_extractor, DETAIL_EXTRACTOR, SCROLL_AND_LOAD, PAGINATION_URLS
 from backend.tasks import run_background, find_running_task
@@ -452,6 +452,73 @@ async def swipe_job(job_id: int, data: SwipeAction, db: Session = Depends(get_db
         job.status = "passed"
         db.commit()
         return {"status": "passed"}
+
+
+# ── Cover Letter Generation ──────────────────────────────────────────────
+
+@router.post("/jobs/{job_id}/generate-cover-letter")
+async def generate_cover_letter(job_id: int, db: Session = Depends(get_db)):
+    """Generate a tailored cover letter for a job based on the user's profile."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    profile = db.query(Profile).filter(Profile.id == job.profile_id).first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    company = db.query(Company).filter(Company.id == job.company_id).first() if job.company_id else None
+
+    # Build the prompt
+    profile_section = f"""Candidate Profile:
+Name: {profile.name or 'N/A'}
+Location: {profile.location or 'N/A'}
+Experience: {profile.experience_years or 'N/A'} years
+Skills: {profile.skills or 'N/A'}
+Resume excerpt: {(profile.resume_text or '')[:3000]}
+{f'Career trajectory: {profile.career_trajectory}' if getattr(profile, 'career_trajectory', None) else ''}
+{f'Leadership style: {profile.leadership_style}' if getattr(profile, 'leadership_style', None) else ''}
+{f'Cover letter style preferences: {profile.cover_letter_template}' if profile.cover_letter_template else ''}"""
+
+    job_section = f"""Job Details:
+Title: {job.title}
+Company: {job.company}
+Location: {job.location or 'N/A'}
+{f'Salary: {job.salary_text}' if job.salary_text else ''}
+Description: {(job.description or '')[:3000]}"""
+
+    company_section = ""
+    if company:
+        company_section = f"""
+Company Intel:
+{f'Industry: {company.industry}' if getattr(company, 'industry', None) else ''}
+{f'Size: {company.size}' if getattr(company, 'size', None) else ''}
+{f'Culture: {company.culture_notes}' if getattr(company, 'culture_notes', None) else ''}"""
+
+    prompt = f"""{profile_section}
+
+{job_section}
+{company_section}
+
+Write a compelling, professional cover letter for this candidate applying to this specific job.
+
+Requirements:
+- 3-4 paragraphs, concise and impactful
+- Open with a strong hook — not "I am writing to express my interest"
+- Highlight 2-3 specific skills/experiences that match the job requirements
+- Show knowledge of the company if intel is available
+- Close with enthusiasm and a clear call to action
+- Professional but personable tone
+- Do NOT include placeholder brackets like [Company Name] — use the actual details
+- Do NOT include the date, addresses, or "Dear Hiring Manager" header — just the body text
+- Keep it under 400 words"""
+
+    try:
+        cover_letter = await ai_generate(prompt, max_tokens=1500, model_tier="balanced")
+        return {"cover_letter": cover_letter.strip(), "job_id": job_id}
+    except Exception as e:
+        logger.error(f"Cover letter generation failed for job {job_id}: {e}")
+        raise HTTPException(500, f"Cover letter generation failed: {str(e)}")
 
 
 # ── Job Detail & Enrichment ──────────────────────────────────────────────

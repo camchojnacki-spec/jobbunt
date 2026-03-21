@@ -209,6 +209,67 @@ def _normalize_location(loc: str) -> str:
     return loc
 
 
+def normalize_title(title: str) -> str:
+    """Normalize a job title for semantic dedup comparison.
+
+    Strips seniority prefixes, level indicators, common fluff words,
+    special characters, and collapses whitespace. Returns lowercase.
+    """
+    t = title.lower().strip()
+    # Remove seniority / level prefixes
+    seniority_prefixes = [
+        r"senior\b", r"sr\.?\b", r"junior\b", r"jr\.?\b",
+        r"lead\b", r"principal\b", r"staff\b", r"distinguished\b",
+        r"entry[\s-]?level\b", r"mid[\s-]?level\b", r"intermediate\b",
+        r"associate\b",
+    ]
+    for pfx in seniority_prefixes:
+        t = re.sub(rf"^\s*{pfx}\s*", "", t)
+        t = re.sub(rf"\s*,?\s*{pfx}\s*$", "", t)
+    # Remove level indicators like "I", "II", "III", "IV", "V" at end
+    t = re.sub(r"\s+(i{1,3}|iv|v)\s*$", "", t)
+    # Remove level numbers at end like "1", "2", "3"
+    t = re.sub(r"\s+[1-5]\s*$", "", t)
+    # Remove parenthetical qualifiers like "(Remote)", "(Contract)", "(Canada)"
+    t = re.sub(r"\s*\([^)]*\)\s*", " ", t)
+    # Remove bracket qualifiers like "[Full-time]"
+    t = re.sub(r"\s*\[[^\]]*\]\s*", " ", t)
+    # Remove special characters, keep only alphanumeric and spaces
+    t = re.sub(r"[^a-z0-9 ]", "", t)
+    # Collapse whitespace
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def normalize_company(company: str) -> str:
+    """Normalize a company name for semantic dedup comparison.
+
+    Strips corporate suffixes (Inc., Ltd., Corp., etc.), special characters,
+    and collapses whitespace. Returns lowercase.
+    """
+    c = company.lower().strip()
+    # Remove common corporate suffixes (with or without period)
+    suffixes = [
+        r"incorporated", r"inc\.?", r"limited", r"ltd\.?",
+        r"llc\.?", r"l\.l\.c\.?", r"llp\.?", r"l\.l\.p\.?",
+        r"corporation", r"corp\.?", r"company", r"co\.?",
+        r"group", r"holdings?", r"enterprises?",
+        r"international", r"intl\.?",
+        r"solutions?", r"services?", r"technologies", r"technology",
+        r"tech\.?", r"systems?",
+        r"plc\.?", r"gmbh", r"s\.?a\.?", r"pty\.?",
+    ]
+    for sfx in suffixes:
+        c = re.sub(rf",?\s*\b{sfx}\s*$", "", c)
+    # Remove "The " prefix
+    c = re.sub(r"^the\s+", "", c)
+    # Remove special characters, keep only alphanumeric and spaces
+    c = re.sub(r"[^a-z0-9 ]", "", c)
+    # Collapse whitespace
+    c = re.sub(r"\s+", " ", c).strip()
+    return c
+
+
 def make_fingerprint(title: str, company: str, location: str = "") -> str:
     """Create a dedup fingerprint from job details.
 
@@ -538,21 +599,19 @@ async def search_linkedin_jobs(query: str, location: str, limit: int = 25) -> li
 
 
 async def search_glassdoor(query: str, location: str, limit: int = 25) -> list[dict]:
-    """Glassdoor search — SKIPPED (requires API key or partner access).
+    """Glassdoor search — SKIPPED (direct scraping blocked).
 
     Glassdoor has aggressive anti-bot protection (Cloudflare + fingerprinting)
     that blocks all direct scraping attempts with 403 Forbidden. Their public
     pages require JavaScript rendering which httpx cannot handle.
 
-    To enable Glassdoor results, configure one of:
-    - GLASSDOOR_PARTNER_KEY env var (partner API access)
-    - SERPAPI_KEY env var (SerpAPI aggregates Glassdoor via Google Jobs)
+    Glassdoor results are already covered by the 'serpapi' source (Google Jobs
+    aggregator) — do NOT add SerpAPI calls here to avoid double-dipping on quota.
+    Browser fallback via Playwright may also surface Glassdoor listings.
     """
     logger.info(
-        "[glassdoor] SKIPPED: Glassdoor blocks direct scraping (403 Forbidden). "
-        "Glassdoor results can be obtained via SerpAPI (Google Jobs aggregator) "
-        "if SERPAPI_KEY is configured, or via Glassdoor Partner API. "
-        "Direct scraping is not feasible due to Cloudflare + JS rendering requirements."
+        "[glassdoor] SKIPPED: direct scraping blocked (403 Forbidden / Cloudflare). "
+        "Glassdoor results are covered by the serpapi source (Google Jobs aggregator)."
     )
     return []
 
@@ -2346,13 +2405,23 @@ async def search_all_sources(profile: Profile, sources: list[str] | None = None,
 
 
 def _fuzzy_match_title(title1: str, title2: str) -> bool:
-    """Check if two job titles are likely the same role (fuzzy match)."""
-    # Normalize both
-    t1 = re.sub(r"[^a-z0-9 ]", "", title1.lower()).strip()
-    t2 = re.sub(r"[^a-z0-9 ]", "", title2.lower()).strip()
+    """Check if two job titles are likely the same role (fuzzy match).
+
+    Uses normalize_title() to strip seniority prefixes and level indicators
+    before comparing, so "Senior Developer" and "Jr. Developer" at the same
+    company are recognized as the same base role posted at different levels.
+    """
+    # Quick exact check (lowercase + strip specials)
+    t1_raw = re.sub(r"[^a-z0-9 ]", "", title1.lower()).strip()
+    t2_raw = re.sub(r"[^a-z0-9 ]", "", title2.lower()).strip()
+    if t1_raw == t2_raw:
+        return True
+    # Semantic check: normalize away seniority/level differences
+    t1 = normalize_title(title1)
+    t2 = normalize_title(title2)
     if t1 == t2:
         return True
-    # Check if one contains the other (e.g. "Senior Developer" vs "Senior Software Developer")
+    # Word-overlap check on normalized titles
     words1 = set(t1.split())
     words2 = set(t2.split())
     if not words1 or not words2:
@@ -2366,15 +2435,12 @@ def _fuzzy_match_title(title1: str, title2: str) -> bool:
 
 
 def _fuzzy_match_company(comp1: str, comp2: str) -> bool:
-    """Check if two company names likely refer to the same company."""
-    c1 = re.sub(r"[^a-z0-9 ]", "", comp1.lower()).strip()
-    c2 = re.sub(r"[^a-z0-9 ]", "", comp2.lower()).strip()
-    if c1 == c2:
-        return True
-    # Remove common suffixes
-    for suffix in ["inc", "ltd", "llc", "corp", "corporation", "company", "co", "group", "international", "intl"]:
-        c1 = re.sub(rf"\b{suffix}\b", "", c1).strip()
-        c2 = re.sub(rf"\b{suffix}\b", "", c2).strip()
+    """Check if two company names likely refer to the same company.
+
+    Uses normalize_company() to strip corporate suffixes before comparing.
+    """
+    c1 = normalize_company(comp1)
+    c2 = normalize_company(comp2)
     if c1 == c2:
         return True
     # Check containment (e.g. "Royal Bank of Canada" vs "RBC" won't match, but
@@ -2407,17 +2473,51 @@ def _sanitize_title(title: str) -> str:
     return title
 
 
+def _merge_sources(target_job, raw: dict, source: str):
+    """Merge source info from a raw job dict into an existing Job, avoiding duplicates."""
+    try:
+        sources = json.loads(target_job.sources_seen or "[]")
+    except (json.JSONDecodeError, TypeError):
+        sources = [target_job.source] if target_job.source else []
+    raw_sources = raw.get("sources_seen", [source])
+    for s in raw_sources:
+        if s not in sources:
+            sources.append(s)
+    target_job.sources_seen = json.dumps(sources)
+    # Keep the longer description
+    new_desc = raw.get("description", "")
+    if new_desc and len(new_desc) > len(target_job.description or ""):
+        target_job.description = new_desc
+    # Keep a URL if the existing one is empty
+    if not target_job.url and raw.get("url"):
+        target_job.url = raw["url"]
+
+
 def save_scraped_jobs(db: Session, profile_id: int, raw_jobs: list[dict]) -> list[Job]:
-    """Save scraped jobs to DB, deduplicating by fingerprint + fuzzy matching. Returns new jobs only."""
+    """Save scraped jobs to DB, deduplicating by fingerprint + semantic + fuzzy matching.
+
+    Dedup layers (checked in order):
+    1. Fingerprint — exact hash of lowercased title+company+city
+    2. Semantic   — normalize_title()+normalize_company() key match (strips
+                    seniority prefixes, corporate suffixes, etc.)
+    3. Fuzzy      — word-overlap on normalized titles + company containment
+    """
     new_jobs = []
     seen_fps = {}  # Track fingerprints within this batch
-    # Build fuzzy index of existing jobs for AI-style dedup
+
+    # Build indexes of existing jobs for dedup
     existing_jobs = db.query(Job).filter(Job.profile_id == profile_id).all()
-    existing_index = {}  # company_norm -> [Job, ...]
+    existing_index = {}   # company_norm -> [Job, ...]  (for fuzzy dedup)
+    semantic_index = {}   # (norm_title, norm_company) -> Job  (for semantic dedup)
     for ej in existing_jobs:
         comp_key = re.sub(r"[^a-z0-9]", "", (ej.company or "").lower())
         existing_index.setdefault(comp_key, []).append(ej)
+        # Semantic index key
+        sem_key = (normalize_title(ej.title or ""), normalize_company(ej.company or ""))
+        if sem_key not in semantic_index:
+            semantic_index[sem_key] = ej
 
+    dupes_by_semantic = 0
     dupes_by_fuzzy = 0
 
     for raw in raw_jobs:
@@ -2429,48 +2529,34 @@ def save_scraped_jobs(db: Session, profile_id: int, raw_jobs: list[dict]) -> lis
         fp = make_fingerprint(title, company, raw.get("location", ""))
         source = raw.get("source", "unknown")
 
+        # ── Layer 1: Fingerprint dedup (exact hash match) ──
         # Check in-memory batch first (catches dupes within same scrape run)
         if fp in seen_fps:
-            batch_job = seen_fps[fp]
-            try:
-                sources = json.loads(batch_job.sources_seen or "[]")
-            except (json.JSONDecodeError, TypeError):
-                sources = [batch_job.source] if batch_job.source else []
-            raw_sources = raw.get("sources_seen", [source])
-            for s in raw_sources:
-                if s not in sources:
-                    sources.append(s)
-            batch_job.sources_seen = json.dumps(sources)
-            new_desc = raw.get("description", "")
-            if new_desc and len(new_desc) > len(batch_job.description or ""):
-                batch_job.description = new_desc
+            _merge_sources(seen_fps[fp], raw, source)
             continue
 
         existing = job_exists(db, profile_id, fp)
         if existing:
-            # Update last_seen for repost detection
             existing.last_seen = datetime.utcnow()
-            # Track that we saw it on another source too
-            try:
-                sources = json.loads(existing.sources_seen or "[]")
-            except (json.JSONDecodeError, TypeError):
-                sources = [existing.source] if existing.source else []
-            raw_sources = raw.get("sources_seen", [source])
-            for s in raw_sources:
-                if s not in sources:
-                    sources.append(s)
-            existing.sources_seen = json.dumps(sources)
-            # Keep the longer description if the new one is better
-            new_desc = raw.get("description", "")
-            if new_desc and len(new_desc) > len(existing.description or ""):
-                existing.description = new_desc
-            # Keep a URL if the existing one is empty
-            if not existing.url and raw.get("url"):
-                existing.url = raw["url"]
+            _merge_sources(existing, raw, source)
             continue
 
-        # ── Fuzzy dedup: check if a similar job already exists ──
-        # This catches cases like "Sr. Developer" vs "Senior Developer" at the same company
+        # ── Layer 2: Semantic dedup (normalized title + company) ──
+        # Catches "Senior Developer" vs "Jr. Developer" at "Acme Inc." vs "Acme"
+        norm_t = normalize_title(title)
+        norm_c = normalize_company(company)
+        sem_key = (norm_t, norm_c)
+
+        sem_match = semantic_index.get(sem_key)
+        if sem_match:
+            dupes_by_semantic += 1
+            sem_match.last_seen = datetime.utcnow()
+            _merge_sources(sem_match, raw, source)
+            logger.debug(f"Semantic dedup: '{title}' at '{company}' matched existing '{sem_match.title}' at '{sem_match.company}'")
+            continue
+
+        # ── Layer 3: Fuzzy dedup (word overlap on titles + company containment) ──
+        # This catches cases that semantic normalization misses
         comp_key = re.sub(r"[^a-z0-9]", "", company.lower())
         fuzzy_match = None
 
@@ -2493,27 +2579,13 @@ def save_scraped_jobs(db: Session, profile_id: int, raw_jobs: list[dict]) -> lis
                     break
 
         if fuzzy_match:
-            # Merge source info into existing match
             dupes_by_fuzzy += 1
-            try:
-                sources = json.loads(fuzzy_match.sources_seen or "[]")
-            except (json.JSONDecodeError, TypeError):
-                sources = [fuzzy_match.source] if fuzzy_match.source else []
-            raw_sources = raw.get("sources_seen", [source])
-            for s in raw_sources:
-                if s not in sources:
-                    sources.append(s)
-            fuzzy_match.sources_seen = json.dumps(sources)
             fuzzy_match.last_seen = datetime.utcnow()
-            # Keep better description
-            new_desc = raw.get("description", "")
-            if new_desc and len(new_desc) > len(fuzzy_match.description or ""):
-                fuzzy_match.description = new_desc
-            if not fuzzy_match.url and raw.get("url"):
-                fuzzy_match.url = raw["url"]
+            _merge_sources(fuzzy_match, raw, source)
             logger.debug(f"Fuzzy dedup: '{title}' at '{company}' matched existing '{fuzzy_match.title}' at '{fuzzy_match.company}'")
             continue
 
+        # ── No match found — create new job ──
         job = Job(
             profile_id=profile_id,
             fingerprint=fp,
@@ -2530,12 +2602,13 @@ def save_scraped_jobs(db: Session, profile_id: int, raw_jobs: list[dict]) -> lis
         )
         db.add(job)
         new_jobs.append(job)
-        seen_fps[fp] = job  # Track for in-batch dedup
-        # Add to fuzzy index too
+        seen_fps[fp] = job
+        # Add to both dedup indexes
         existing_index.setdefault(comp_key, []).append(job)
+        semantic_index.setdefault(sem_key, job)
 
-    if dupes_by_fuzzy:
-        logger.info(f"Fuzzy dedup caught {dupes_by_fuzzy} additional duplicates beyond fingerprint matching")
+    if dupes_by_semantic or dupes_by_fuzzy:
+        logger.info(f"Dedup stats: {dupes_by_semantic} semantic + {dupes_by_fuzzy} fuzzy duplicates merged")
 
     db.commit()
     for j in new_jobs:
