@@ -2,6 +2,76 @@
 /* Design system v3: Outfit family, new color tokens */
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+/* ── WCAG 2.1 AA Accessibility ── */
+
+/* Skip-to-content link: visible only on focus */
+.skip-to-content {
+    position: absolute;
+    top: -100%;
+    left: 16px;
+    z-index: 10000;
+    padding: 12px 24px;
+    background: var(--jb-bright, #4A90D9);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'Outfit', sans-serif;
+    border-radius: 0 0 8px 8px;
+    text-decoration: none;
+    transition: top 0.15s ease;
+}
+.skip-to-content:focus {
+    top: 0;
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+/* Screen-reader only utility */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Focus-visible indicators for keyboard navigation */
+*:focus-visible {
+    outline: 2px solid var(--jb-bright, #4A90D9);
+    outline-offset: 2px;
+}
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--jb-bright, #4A90D9);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(74, 144, 217, 0.25);
+}
+.bottom-tab:focus-visible {
+    outline: 2px solid var(--jb-bright, #4A90D9);
+    outline-offset: -2px;
+    box-shadow: inset 0 0 0 2px rgba(74, 144, 217, 0.3);
+}
+.job-list-row:focus-visible,
+.job-grid-card:focus-visible,
+.job-card:focus-visible {
+    outline: 2px solid var(--jb-bright, #4A90D9);
+    outline-offset: -2px;
+    box-shadow: 0 0 0 4px rgba(74, 144, 217, 0.2);
+}
+/* Preserve existing :focus styling for inputs but add focus-visible ring */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+    outline: 2px solid var(--jb-bright, #4A90D9);
+    outline-offset: -1px;
+}
+
 :root {
     /* ── New Design Kit Tokens ── */
     --jb-bg-deep: #090E18;
@@ -6781,4 +6851,79 @@ select:focus {
     .trophy-badge-name {
         font-size: 9px;
     }
+}
+
+/* ── Seasonal Theme Overrides ─────────────────────────────────────────── */
+
+/* Spring Training (Feb–Apr): fresh green accents */
+body.season-spring {
+    --jb-bright: #3DBB78;
+    --jb-bright-light: #5CD492;
+    --jb-info: #3DBB78;
+    --jb-info-s: rgba(61, 187, 120, .1);
+    --accent: #3DBB78;
+    --accent-light: #5CD492;
+    --accent-dim: rgba(61, 187, 120, .12);
+}
+body.season-spring::before {
+    background:
+        radial-gradient(ellipse 80% 50% at 50% 0%, rgba(61, 187, 120, 0.05) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 40% at 80% 20%, rgba(120, 210, 80, 0.03) 0%, transparent 60%);
+}
+
+/* Regular Season (May–Aug): classic baseball blue/red (default, reinforced) */
+body.season-regular {
+    --jb-bright: #4A90D9;
+    --jb-bright-light: #6BAAEB;
+    --jb-red: #E8291C;
+}
+
+/* Playoff Push (Sep–Oct): intense gold/amber accents */
+body.season-playoffs {
+    --jb-bright: #D4A030;
+    --jb-bright-light: #E8B84A;
+    --jb-info: #D4A030;
+    --jb-info-s: rgba(212, 160, 48, .1);
+    --accent: #D4A030;
+    --accent-light: #E8B84A;
+    --accent-dim: rgba(212, 160, 48, .12);
+}
+body.season-playoffs::before {
+    background:
+        radial-gradient(ellipse 80% 50% at 50% 0%, rgba(212, 160, 48, 0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 40% at 80% 20%, rgba(232, 184, 74, 0.03) 0%, transparent 60%);
+}
+
+/* Off Season (Nov–Jan): cool frost tones */
+body.season-offseason {
+    --jb-bright: #6B9FC4;
+    --jb-bright-light: #8BB8D8;
+    --jb-info: #6B9FC4;
+    --jb-info-s: rgba(107, 159, 196, .1);
+    --accent: #6B9FC4;
+    --accent-light: #8BB8D8;
+    --accent-dim: rgba(107, 159, 196, .12);
+}
+body.season-offseason::before {
+    background:
+        radial-gradient(ellipse 80% 50% at 50% 0%, rgba(107, 159, 196, 0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 40% at 20% 10%, rgba(180, 210, 240, 0.03) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 30% at 75% 30%, rgba(200, 220, 240, 0.02) 0%, transparent 50%);
+}
+
+/* Seasonal banner on home page */
+.seasonal-banner {
+    text-align: center;
+    padding: 10px 16px;
+    margin: -4px 0 12px;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--jb-text-2);
+    border-radius: var(--jb-r-md);
+    background: var(--accent-dim, rgba(74, 144, 217, 0.08));
+    border: 1px solid var(--jb-border);
+    letter-spacing: 0.01em;
+}
+.seasonal-banner .seasonal-icon {
+    margin-right: 6px;
 }

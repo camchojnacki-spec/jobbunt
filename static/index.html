@@ -11,6 +11,9 @@
     <script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
+    <!-- Skip to Content (WCAG 2.1 AA) -->
+    <a href="#main-content" class="skip-to-content">Skip to main content</a>
+
     <!-- Login Screen Overlay -->
     <div class="login-overlay" id="login-overlay" style="display:none">
         <div class="login-container">
@@ -22,9 +25,13 @@
             <div class="local-auth-section" id="local-auth-section">
                 <div class="local-auth-divider"><span>or sign in with email</span></div>
                 <div id="local-auth-form">
+                    <label for="local-auth-name" class="sr-only">Full Name</label>
                     <input type="text" id="local-auth-name" class="local-auth-input" placeholder="Full Name" style="display:none" autocomplete="name">
+                    <label for="local-auth-email" class="sr-only">Email</label>
                     <input type="email" id="local-auth-email" class="local-auth-input" placeholder="Email" autocomplete="email">
+                    <label for="local-auth-password" class="sr-only">Password</label>
                     <input type="password" id="local-auth-password" class="local-auth-input" placeholder="Password" autocomplete="current-password">
+                    <label for="local-auth-confirm-password" class="sr-only">Confirm Password</label>
                     <input type="password" id="local-auth-confirm-password" class="local-auth-input" placeholder="Confirm Password" style="display:none" autocomplete="new-password">
                     <div id="local-auth-error" class="local-auth-error" style="display:none"></div>
                     <button class="btn btn-primary local-auth-btn" id="local-auth-submit" onclick="handleLocalAuth()">Sign In</button>
@@ -107,7 +114,7 @@
         </div>
 
         <!-- Main Content -->
-        <main class="main page">
+        <main class="main page" id="main-content">
             <!-- ═══ Home View (Dashboard) ═══ -->
             <div class="view active" id="view-home" data-view="home">
                 <div class="dugout-container">
@@ -151,6 +158,9 @@
                         <h1 class="dugout-hero-title">Make <span class="dugout-hero-accent">contact.</span></h1>
                         <p class="dugout-hero-subtitle">AI-powered job search. Better interviews. Smarter applications.</p>
                     </div>
+
+                    <!-- Seasonal Banner -->
+                    <div class="seasonal-banner" id="seasonal-banner"></div>
 
                     <!-- Coach's Note -->
                     <div class="dugout-coach-note" id="dugout-coach-note" style="display:none"></div>
@@ -224,6 +234,7 @@
                             <div class="dugout-card-title">Pre-game Interview</div>
                             <div class="reporter-triple-a-hint" id="reporter-triple-a-hint">Answer these to advance through the ranks</div>
                             <div class="reporter-question" id="reporter-question"></div>
+                            <label for="reporter-textarea" class="sr-only">Your answer</label>
                             <textarea class="reporter-textarea" id="reporter-textarea" placeholder="Your answer..." rows="3" style="display:none"></textarea>
                             <div class="reporter-actions">
                                 <button class="reporter-save-btn" id="reporter-save-btn" onclick="saveReporterAnswer()" style="display:none">

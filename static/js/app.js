@@ -52,9 +52,50 @@ let state = {
     },
 };
 
+// ── Seasonal Theme ───────────────────────────────────────────────────────
+
+function getSeasonalTheme() {
+    const month = new Date().getMonth(); // 0-indexed
+    if (month >= 1 && month <= 3) {
+        return {
+            name: 'spring',
+            cssClass: 'season-spring',
+            message: 'Spring Training is underway \u2014 time to build your roster!'
+        };
+    } else if (month >= 4 && month <= 7) {
+        return {
+            name: 'regular',
+            cssClass: 'season-regular',
+            message: 'The season is in full swing. Keep your batting average up!'
+        };
+    } else if (month >= 8 && month <= 9) {
+        return {
+            name: 'playoffs',
+            cssClass: 'season-playoffs',
+            message: 'Crunch time! Sharpen your applications for the final stretch.'
+        };
+    } else {
+        return {
+            name: 'offseason',
+            cssClass: 'season-offseason',
+            message: 'The off-season is the perfect time to retool your profile.'
+        };
+    }
+}
+
+function applySeasonalTheme() {
+    const theme = getSeasonalTheme();
+    document.body.classList.add(theme.cssClass);
+    const banner = document.getElementById('seasonal-banner');
+    if (banner) {
+        banner.textContent = theme.message;
+    }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
+    applySeasonalTheme();
     setupNavigation();
     setupTagInputs();
     setupKeyboard();
@@ -1418,6 +1459,16 @@ function browsePage(page) {
 }
 window.browsePage = browsePage;
 
+// WCAG: Generate accessible label for score badges
+function scoreAriaLabel(score) {
+    const rounded = Math.round(score);
+    const label = rounded >= 80 ? 'Excellent Match' :
+                  rounded >= 65 ? 'Strong Match' :
+                  rounded >= 50 ? 'Decent Match' :
+                  rounded >= 35 ? 'Weak Match' : 'Poor Match';
+    return `Match score: ${rounded} out of 100, ${label}`;
+}
+
 function renderJobList(jobs) {
     const list = document.getElementById('job-list');
     list.innerHTML = jobs.map((job, i) => {
@@ -1429,7 +1480,7 @@ function renderJobList(jobs) {
         const salary = job.salary_text ? `<span class="list-salary">${esc(job.salary_text)}</span>` : '';
 
         return `<div class="job-list-row ${selected}" data-job-id="${job.id}" onclick="selectJobFromList(${job.id}, ${i})">
-            <div class="list-score" style="color:${scoreColor}">${Math.round(job.match_score)}</div>
+            <div class="list-score" style="color:${scoreColor}" role="img" aria-label="${scoreAriaLabel(job.match_score)}">${Math.round(job.match_score)}</div>
             <div class="list-main">
                 <div class="list-title" title="${esc(job.title)}">${esc(job.title)}</div>
                 <div class="list-meta">
@@ -1477,7 +1528,7 @@ function renderJobGrid(jobs) {
 
         return `<div class="job-grid-card ${selected}${job.url_valid === false ? ' listing-is-closed' : ''}" data-job-id="${job.id}" onclick="selectJobFromList(${job.id}, ${i})">
             <div class="grid-header">
-                <div class="grid-score" style="color:${scoreColor}">${Math.round(job.match_score)}</div>
+                <div class="grid-score" style="color:${scoreColor}" role="img" aria-label="${scoreAriaLabel(job.match_score)}">${Math.round(job.match_score)}</div>
                 <div class="grid-sources">${gridListingStatus} ${sourceBadges}</div>
             </div>
             <div class="grid-title">${esc(job.title)}</div>
@@ -1696,7 +1747,7 @@ function buildJobCard(job) {
     const bd = job.match_breakdown;
     html += `<div class="card-score-section">
         <div class="score-header">
-            <div class="score-ring ${scoreClass}">${Math.round(job.match_score)}</div>
+            <div class="score-ring ${scoreClass}" role="img" aria-label="${scoreAriaLabel(job.match_score)}">${Math.round(job.match_score)}</div>
             <div class="score-summary">
                 <div class="score-fit-label">${fitLabel}</div>
                 <div class="score-fit-sublabel">Overall fit score</div>
@@ -2208,15 +2259,20 @@ function setupKeyboard() {
         const activeView = document.querySelector('.view.active');
         if (!activeView || activeView.id !== 'view-jobs') return;
 
+        // WCAG keyboard navigation: arrow keys map to swipe actions
+        // Left = pass, Right = shortlist, Up = apply, Down/Space = skip
         if (e.key === 'ArrowLeft' || e.key === 'a') {
             e.preventDefault();
             swipeAction('pass');
         } else if (e.key === 'ArrowRight' || e.key === 'd') {
             e.preventDefault();
+            swipeAction('shortlist');
+        } else if (e.key === 'ArrowUp' || e.key === 'w') {
+            e.preventDefault();
             swipeAction('like');
         } else if (e.key === 'ArrowDown' || e.key === 's') {
             e.preventDefault();
-            swipeAction('shortlist');
+            skipJob();
         } else if (e.key === ' ') {
             e.preventDefault();
             skipJob();
@@ -3109,7 +3165,7 @@ function showApplyConfirmation(job) {
                     <strong>${esc(job.title)}</strong>
                     <span>${esc(job.company)}</span>
                     ${job.location ? `<span class="apply-confirm-loc">${esc(job.location)}</span>` : ''}
-                    ${job.match_score ? `<span class="score-badge" style="background:${job.match_score >= 70 ? 'var(--green)' : job.match_score >= 40 ? 'var(--orange)' : 'var(--red)'}">${job.match_score}</span>` : ''}
+                    ${job.match_score ? `<span class="score-badge" style="background:${job.match_score >= 70 ? 'var(--green)' : job.match_score >= 40 ? 'var(--orange)' : 'var(--red)'}" role="img" aria-label="${scoreAriaLabel(job.match_score)}">${job.match_score}</span>` : ''}
                 </div>
                 <div class="apply-cover-letter-section">
                     <button class="btn btn-secondary" id="generate-cover-letter" style="width:100%;margin:12px 0 8px;display:flex;align-items:center;justify-content:center;gap:6px">
@@ -3688,7 +3744,7 @@ function loadClubhouseCard(container, taEl, saveBtn) {
         marketHtml = `<div class="clubhouse-section">
             <div class="clubhouse-section-label">MARKET PULSE</div>
             <div class="clubhouse-pulse-stat">${jobCount} jobs in pipeline</div>
-            ${topMatch ? `<div class="clubhouse-pulse-top">Top match: <strong>${esc(topMatch.title)}</strong> at ${esc(topMatch.company)} <span class="clubhouse-score">${Math.round(topMatch.match_score || 0)}</span></div>` : ''}
+            ${topMatch ? `<div class="clubhouse-pulse-top">Top match: <strong>${esc(topMatch.title)}</strong> at ${esc(topMatch.company)} <span class="clubhouse-score" role="img" aria-label="${scoreAriaLabel(topMatch.match_score || 0)}">${Math.round(topMatch.match_score || 0)}</span></div>` : ''}
         </div>`;
     } else {
         marketHtml = `<div class="clubhouse-section">
@@ -4530,7 +4586,7 @@ async function loadShortlist() {
             const hasNotes = job.user_notes && job.user_notes.trim();
             html += `<div class="shortlist-card" data-job-id="${job.id}">
                 <div class="sl-header">
-                    <div class="sl-score" style="color:${scoreColor}">${Math.round(job.match_score)}</div>
+                    <div class="sl-score" style="color:${scoreColor}" role="img" aria-label="${scoreAriaLabel(job.match_score)}">${Math.round(job.match_score)}</div>
                     <div class="sl-info">
                         <div class="sl-title">${esc(job.title)}</div>
                         <div class="sl-company">${esc(job.company)}${job.location ? ` · ${esc(job.location)}` : ''}</div>
