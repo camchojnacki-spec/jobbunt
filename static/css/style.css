@@ -589,6 +589,9 @@ body::before {
 }
 .baseball-card .stats-bar::before { display: none; }
 
+/* Share Card button */
+#share-card-btn:hover { opacity: 1 !important; border-color: var(--jb-bright) !important; color: var(--jb-bright) !important; }
+
 /* Card blurb — "back of card" info section */
 .baseball-card-blurb {
     padding: 6px 14px 10px;
@@ -6926,4 +6929,174 @@ body.season-offseason::before {
 }
 .seasonal-banner .seasonal-icon {
     margin-right: 6px;
+}
+
+/* ── Dugout Chat ─────────────────────────────────────────────────────── */
+.dugout-chat-card {
+    margin-bottom: 16px;
+    padding: 0;
+    overflow: hidden;
+}
+.dugout-chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+.dugout-chat-header:hover {
+    background: rgba(74, 144, 217, 0.04);
+}
+.dugout-chat-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.dugout-chat-title {
+    font-family: var(--jb-font);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--jb-text-1);
+    letter-spacing: -0.2px;
+}
+.dugout-chat-subtitle {
+    font-size: 12px;
+    color: var(--jb-text-3);
+    margin-left: 4px;
+}
+.dugout-chat-chevron {
+    transition: transform 0.2s ease;
+    color: var(--jb-text-3);
+}
+.dugout-chat-card.open .dugout-chat-chevron {
+    transform: rotate(180deg);
+}
+.dugout-chat-body {
+    border-top: 1px solid var(--jb-border);
+    padding: 0;
+}
+.dugout-chat-messages {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.dugout-chat-welcome p {
+    font-size: 13px;
+    color: var(--jb-text-2);
+    line-height: 1.5;
+    margin: 0;
+    padding: 10px 14px;
+    background: rgba(74, 144, 217, 0.06);
+    border-radius: var(--jb-r-md);
+    border-left: 3px solid var(--jb-bright);
+}
+.dugout-chat-bubble {
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: var(--jb-r-md);
+    font-size: 13px;
+    line-height: 1.55;
+    animation: jb-fade-up 0.2s ease both;
+}
+.dugout-chat-bubble.user {
+    align-self: flex-end;
+    background: var(--jb-bright);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+}
+.dugout-chat-bubble.ai {
+    align-self: flex-start;
+    background: rgba(74, 144, 217, 0.06);
+    color: var(--jb-text-1);
+    border-bottom-left-radius: 4px;
+    border-left: 3px solid var(--jb-bright);
+}
+.dugout-chat-typing {
+    align-self: flex-start;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--jb-text-3);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.dugout-chat-typing-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--jb-text-3);
+    animation: dugout-typing-bounce 1.2s infinite ease-in-out;
+}
+.dugout-chat-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.dugout-chat-typing-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dugout-typing-bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+    30% { transform: translateY(-4px); opacity: 1; }
+}
+.dugout-chat-prompts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 20px 12px;
+}
+.dugout-chat-prompt-btn {
+    padding: 5px 12px;
+    font-size: 12px;
+    border: 1px solid var(--jb-border);
+    border-radius: 20px;
+    background: var(--jb-bg-primary);
+    color: var(--jb-text-2);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.dugout-chat-prompt-btn:hover {
+    border-color: var(--jb-bright);
+    color: var(--jb-bright);
+    background: rgba(74, 144, 217, 0.06);
+}
+.dugout-chat-input-row {
+    display: flex;
+    gap: 8px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--jb-border);
+    background: var(--jb-bg-primary);
+}
+.dugout-chat-input {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 13px;
+    border: 1px solid var(--jb-border);
+    border-radius: var(--jb-r-md);
+    background: var(--jb-bg-secondary);
+    color: var(--jb-text-1);
+    outline: none;
+    transition: border-color 0.15s;
+}
+.dugout-chat-input:focus {
+    border-color: var(--jb-bright);
+}
+.dugout-chat-send-btn {
+    padding: 8px 12px;
+    border: 1px solid var(--jb-bright);
+    border-radius: var(--jb-r-md);
+    background: var(--jb-bright);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.15s;
+}
+.dugout-chat-send-btn:hover {
+    opacity: 0.85;
+}
+.dugout-chat-send-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }

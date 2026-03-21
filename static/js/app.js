@@ -1084,6 +1084,180 @@ function renderBaseballCardBlurb(stats) {
     blurb.style.display = 'flex';
 }
 
+// ── Share Baseball Card ─────────────────────────────────────────────────
+
+function shareBaseballCard() {
+    if (!state.profile) return;
+
+    const p = state.profile;
+    const name = p.name || 'Unknown';
+    const nameParts = name.split(' ');
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ').toUpperCase() || '';
+    const loc = p.location || '';
+    const pos = p.seniority_level ? p.seniority_level.substring(0, 2).toUpperCase() : 'SS';
+    const initials = (firstName[0] || '') + (lastName[0] || '');
+
+    // Gather stats from the DOM
+    const statEls = document.querySelectorAll('#stats-bar .stat-item');
+    const statData = [];
+    statEls.forEach(el => {
+        const val = el.querySelector('.stat-value')?.textContent?.trim() || '';
+        const lbl = el.querySelector('.stat-label')?.textContent?.trim() || '';
+        if (lbl) statData.push({ val, lbl });
+    });
+
+    // Get scouting blurb
+    const scoutingEl = document.querySelector('.card-blurb-scouting');
+    const scouting = scoutingEl ? scoutingEl.textContent.trim() : '';
+    const roleEl = document.querySelector('.card-blurb-role');
+    const roleText = roleEl ? roleEl.textContent.trim() : '';
+
+    // Build stats HTML for the export card
+    const statsHTML = statData.map(s => {
+        let color = '#E0E6ED';
+        const l = s.lbl.toUpperCase();
+        if (l === 'H' || l === 'SLG') color = '#34B87A';
+        else if (l === 'BB' || l === 'AVG') color = '#4A90D9';
+        else if (l === 'OBP') color = '#4A90D9';
+        else if (l === 'K') color = '#566A87';
+        else if (l === 'OPS') {
+            const v = parseFloat(s.val);
+            color = v >= 0.800 ? '#34B87A' : v >= 0.500 ? '#4A90D9' : '#566A87';
+        }
+        return `<div style="text-align:center;padding:4px 6px;">
+            <div style="font-size:18px;font-weight:600;color:${color};letter-spacing:-0.3px;">${s.val}</div>
+            <div style="font-size:8px;color:#566A87;text-transform:uppercase;letter-spacing:1.5px;margin-top:2px;">${s.lbl}</div>
+        </div>`;
+    }).join('');
+
+    // Build the full card HTML
+    const cardWidth = 600;
+    const cardHTML = `
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:${cardWidth}px;font-family:Outfit,Helvetica,Arial,sans-serif;display:flex;border-radius:12px;overflow:hidden;background:#0D1B30;border:2px solid rgba(74,144,217,0.15);">
+            <!-- Front -->
+            <div style="width:200px;min-width:200px;background:linear-gradient(165deg,#0D1B30 0%,#111F38 40%,#162744 100%);padding:20px 16px;display:flex;flex-direction:column;align-items:center;position:relative;border-right:2px solid rgba(74,144,217,0.15);">
+                <div style="position:absolute;top:8px;left:12px;font-size:11px;color:#566A87;font-family:monospace;">#${state.profileId || 0}</div>
+                <div style="position:absolute;top:8px;right:12px;font-size:13px;font-weight:700;color:#4A90D9;font-family:monospace;">${pos}</div>
+                <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#1D2D5C,#162744);border:2px solid rgba(74,144,217,0.2);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;color:#4A90D9;margin-top:12px;margin-bottom:10px;">${initials}</div>
+                <div style="font-size:16px;font-weight:500;color:#E0E6ED;text-align:center;">
+                    ${firstName}
+                    <span style="display:block;font-size:20px;font-weight:700;letter-spacing:2px;color:#E0E6ED;">${lastName}</span>
+                </div>
+                <div style="font-size:11px;color:#566A87;margin-top:4px;">${loc}</div>
+                <svg width="28" height="28" viewBox="0 0 40 40" fill="none" style="margin-top:auto;opacity:0.4;">
+                    <path d="M20 2 L36 18 L20 34 L4 18Z" fill="#1D2D5C" stroke="#4A90D9" stroke-width="0.8"/>
+                    <path d="M20 22 L28 18 L20 14 L12 18Z" fill="#E8291C" opacity="0.35"/>
+                </svg>
+            </div>
+            <!-- Back -->
+            <div style="flex:1;padding:16px;display:flex;flex-direction:column;background:linear-gradient(180deg,#111F38 0%,#0D1B30 100%);">
+                <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:2px;padding:6px 0;border-bottom:1px solid rgba(74,144,217,0.1);margin-bottom:10px;">
+                    ${statsHTML}
+                </div>
+                <div style="margin-top:4px;">
+                    <div style="font-size:14px;font-weight:600;color:#E0E6ED;">${firstName} ${nameParts.slice(1).join(' ')}</div>
+                    <div style="font-size:11px;color:#8A9BB5;margin-top:2px;">${roleText}</div>
+                    <div style="font-size:12px;color:#8A9BB5;margin-top:8px;font-style:italic;line-height:1.4;">${scouting}</div>
+                </div>
+                <div style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid rgba(74,144,217,0.06);">
+                    <span style="font-size:9px;color:#566A87;letter-spacing:1px;text-transform:uppercase;">Jobbunt</span>
+                    <span style="font-size:9px;color:#566A87;">${new Date().getFullYear()} Season</span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Use SVG foreignObject technique to render as image
+    const svgData = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${cardWidth}" height="280">
+            <foreignObject width="100%" height="100%">
+                ${cardHTML}
+            </foreignObject>
+        </svg>
+    `;
+
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const svgUrl = URL.createObjectURL(svgBlob);
+    const img = new Image();
+
+    img.onload = function () {
+        const canvas = document.createElement('canvas');
+        const scale = 2; // retina quality
+        canvas.width = cardWidth * scale;
+        canvas.height = 280 * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, cardWidth, 280);
+        URL.revokeObjectURL(svgUrl);
+
+        canvas.toBlob(function (blob) {
+            if (!blob) {
+                // Fallback: open in new window
+                shareBaseballCardFallback(cardHTML, cardWidth);
+                return;
+            }
+
+            const fileName = `jobbunt-card-${(name || 'player').replace(/\s+/g, '-').toLowerCase()}.png`;
+
+            // Try Web Share API first (mobile-friendly)
+            if (navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: 'image/png' })] })) {
+                const file = new File([blob], fileName, { type: 'image/png' });
+                navigator.share({
+                    title: 'My Jobbunt Baseball Card',
+                    text: `Check out my job search stats!`,
+                    files: [file]
+                }).catch(() => {
+                    // User cancelled or share failed — download instead
+                    downloadBlob(blob, fileName);
+                });
+            } else {
+                downloadBlob(blob, fileName);
+            }
+        }, 'image/png');
+    };
+
+    img.onerror = function () {
+        URL.revokeObjectURL(svgUrl);
+        // SVG foreignObject blocked (tainted canvas) — use fallback
+        shareBaseballCardFallback(cardHTML, cardWidth);
+    };
+
+    img.src = svgUrl;
+}
+
+function downloadBlob(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function shareBaseballCardFallback(cardHTML, cardWidth) {
+    // Fallback: open a new window with the card, styled for screenshotting
+    const win = window.open('', '_blank', `width=${cardWidth + 40},height=360`);
+    if (!win) {
+        alert('Please allow pop-ups to export your Baseball Card.');
+        return;
+    }
+    win.document.write(`<!DOCTYPE html>
+<html><head><title>Jobbunt Baseball Card</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+body { margin:0; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; background:#0a1425; }
+.instructions { color:#8A9BB5; font-family:Outfit,sans-serif; font-size:13px; margin-top:16px; text-align:center; }
+.instructions kbd { background:#162744; padding:2px 6px; border-radius:4px; border:1px solid rgba(74,144,217,0.15); font-size:12px; }
+</style></head><body>
+${cardHTML}
+<div class="instructions">Right-click the card and choose <kbd>Save image as...</kbd><br/>or take a screenshot to share on LinkedIn</div>
+</body></html>`);
+    win.document.close();
+}
+
 // ── Browse Views ────────────────────────────────────────────────────────
 
 async function loadSwipeStack() {
@@ -7590,6 +7764,110 @@ async function ingestDispatchResults() {
     } catch (e) {
         hideActivity();
         toast('Import failed: ' + e.message, 'error');
+    }
+}
+
+// ── Dugout Chat ──────────────────────────────────────────────────────────
+
+// Session-only chat history (not persisted)
+let dugoutChatHistory = [];
+let dugoutChatBusy = false;
+
+function toggleDugoutChat() {
+    const card = document.getElementById('dugout-chat-card');
+    const body = document.getElementById('dugout-chat-body');
+    if (!card || !body) return;
+    const isOpen = card.classList.contains('open');
+    if (isOpen) {
+        card.classList.remove('open');
+        body.style.display = 'none';
+    } else {
+        card.classList.add('open');
+        body.style.display = 'block';
+        // Focus the input
+        const input = document.getElementById('dugout-chat-input');
+        if (input) setTimeout(() => input.focus(), 100);
+    }
+}
+
+function sendDugoutPrompt(text) {
+    const input = document.getElementById('dugout-chat-input');
+    if (input) input.value = text;
+    sendDugoutChat();
+}
+
+async function sendDugoutChat() {
+    if (dugoutChatBusy) return;
+    const input = document.getElementById('dugout-chat-input');
+    const message = input?.value?.trim();
+    if (!message || !state.profileId) return;
+
+    input.value = '';
+    dugoutChatBusy = true;
+
+    // Add user message
+    dugoutChatHistory.push({ role: 'user', text: message });
+    renderDugoutMessages();
+
+    // Show typing indicator
+    const messagesEl = document.getElementById('dugout-chat-messages');
+    const typingEl = document.createElement('div');
+    typingEl.className = 'dugout-chat-typing';
+    typingEl.id = 'dugout-chat-typing';
+    typingEl.innerHTML = '<span class="dugout-chat-typing-dot"></span><span class="dugout-chat-typing-dot"></span><span class="dugout-chat-typing-dot"></span>';
+    messagesEl.appendChild(typingEl);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    // Disable send button
+    const sendBtn = document.getElementById('dugout-chat-send-btn');
+    if (sendBtn) sendBtn.disabled = true;
+
+    try {
+        const result = await api(`/profiles/${state.profileId}/dugout-chat`, {
+            method: 'POST',
+            body: { message },
+        });
+        dugoutChatHistory.push({ role: 'ai', text: result.response });
+    } catch (e) {
+        dugoutChatHistory.push({ role: 'ai', text: 'Sorry, the manager stepped away for a moment. Try again in a bit.' });
+    }
+
+    // Remove typing indicator and render
+    const typing = document.getElementById('dugout-chat-typing');
+    if (typing) typing.remove();
+    dugoutChatBusy = false;
+    if (sendBtn) sendBtn.disabled = false;
+
+    // Keep only last 5 message pairs (10 messages)
+    if (dugoutChatHistory.length > 10) {
+        dugoutChatHistory = dugoutChatHistory.slice(-10);
+    }
+
+    renderDugoutMessages();
+}
+
+function renderDugoutMessages() {
+    const messagesEl = document.getElementById('dugout-chat-messages');
+    if (!messagesEl) return;
+
+    // Build HTML: welcome + history
+    let html = '';
+    if (dugoutChatHistory.length === 0) {
+        html = '<div class="dugout-chat-welcome"><p>Hey rookie, I\'m your dugout manager. Ask me anything about your job search \u2014 how you\'re doing, what to focus on, or just need a pep talk.</p></div>';
+    }
+
+    for (const msg of dugoutChatHistory) {
+        const escaped = msg.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+        html += `<div class="dugout-chat-bubble ${msg.role}">${escaped}</div>`;
+    }
+
+    messagesEl.innerHTML = html;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    // Hide quick prompts after first message sent
+    if (dugoutChatHistory.length > 0) {
+        const prompts = document.getElementById('dugout-chat-prompts');
+        if (prompts) prompts.style.display = 'none';
     }
 }
 
