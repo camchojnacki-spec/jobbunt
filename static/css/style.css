@@ -2555,6 +2555,58 @@ body::before {
 .status-hidden { background: rgba(74,84,104,0.15); color: var(--text-dim); }
 .status-cancelled { background: rgba(74,84,104,0.12); color: var(--text-dim); }
 
+/* ── Why This Score Toggle ── */
+.why-score-toggle {
+    margin-top: 10px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+}
+.why-score-toggle:hover {
+    color: var(--accent-bright, var(--accent));
+    text-decoration: underline;
+}
+.why-score-chevron {
+    display: inline-block;
+    font-size: 9px;
+    transition: transform 0.2s ease;
+}
+.why-score-toggle.open .why-score-chevron {
+    transform: rotate(90deg);
+}
+.why-score-detail {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+    opacity: 0;
+}
+.why-score-detail.open {
+    max-height: 600px;
+    opacity: 1;
+}
+.why-score-reasons {
+    margin: 10px 0 0 0;
+    padding: 0 0 0 18px;
+    list-style: disc;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.why-score-reasons .why-reason {
+    font-size: 12px;
+    color: var(--text-secondary, var(--text-dim));
+    line-height: 1.4;
+}
+.why-score-reasons .why-reason.concern {
+    color: var(--orange);
+}
+
 /* ── Match Breakdown ── */
 .match-breakdown {
     margin-top: 12px;
@@ -6638,4 +6690,95 @@ select:focus {
 }
 .tailored-resume-body li {
     margin-bottom: 4px;
+}
+
+/* ── Trophy Case (Achievements) ────────────────────────────────────────── */
+.dugout-trophy-case {
+    margin: 20px 0;
+}
+.trophy-case-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 10px;
+}
+.trophy-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 6px 10px;
+    background: var(--jb-bg-secondary);
+    border: 1px solid var(--jb-border);
+    border-radius: 10px;
+    text-align: center;
+    transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+    cursor: default;
+    position: relative;
+}
+.trophy-badge.unlocked {
+    border-color: var(--jb-bright);
+    box-shadow: 0 0 8px rgba(74, 144, 217, 0.15);
+}
+.trophy-badge.unlocked:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(74, 144, 217, 0.25);
+}
+.trophy-badge.locked {
+    opacity: 0.38;
+    filter: grayscale(1);
+}
+.trophy-badge-icon {
+    font-size: 28px;
+    line-height: 1;
+    margin-bottom: 6px;
+}
+.trophy-badge-name {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--jb-text-1);
+    line-height: 1.2;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+.trophy-badge.locked .trophy-badge-name {
+    color: var(--jb-text-dim);
+}
+.trophy-badge-hint {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--jb-bg-tooltip, #1a1a2e);
+    color: var(--jb-text-2);
+    font-size: 11px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+    z-index: 10;
+    pointer-events: none;
+    border: 1px solid var(--jb-border);
+}
+.trophy-badge:hover .trophy-badge-hint {
+    display: block;
+}
+.trophy-case-summary {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--jb-text-dim);
+    text-align: center;
+}
+@media (max-width: 480px) {
+    .trophy-case-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+    }
+    .trophy-badge {
+        padding: 10px 4px 8px;
+    }
+    .trophy-badge-icon {
+        font-size: 24px;
+    }
+    .trophy-badge-name {
+        font-size: 9px;
+    }
 }

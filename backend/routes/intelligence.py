@@ -2023,3 +2023,301 @@ async def get_box_score(profile_id: int, db: Session = Depends(get_db)):
         "score_distribution": buckets,
         "recent_activity": recent_activity,
     }
+
+
+# ── Game Summary (Weekly AI Recap) ──────────────────────────────────────
+
+@router.get("/profiles/{profile_id}/game-summary")
+async def get_game_summary(profile_id: int, db: Session = Depends(get_db)):
+    """Generate an AI-powered weekly summary of job search activity in baseball commentary style."""
+    profile = db.query(Profile).filter(Profile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    now = datetime.utcnow()
+    seven_days_ago = now - timedelta(days=7)
+
+    # Gather weekly stats
+    jobs = db.query(Job).filter(Job.profile_id == profile_id).all()
+    applications = db.query(Application).filter(Application.profile_id == profile_id).all()
+
+    week_jobs = [j for j in jobs if j.created_at and j.created_at >= seven_days_ago]
+    week_apps = [a for a in applications if a.created_at and a.created_at >= seven_days_ago]
+    week_shortlisted = [j for j in week_jobs if j.status in ("liked", "shortlisted")]
+    week_interviews = [a for a in week_apps if a.pipeline_status in ("interview", "screening")]
+
+    # Check for AI tools usage (documents generated this week)
+    week_docs = db.query(Document).filter(
+        Document.profile_id == profile_id,
+        Document.created_at >= seven_days_ago
+    ).count()
+    week_interview_preps = db.query(Interview).filter(
+        Interview.profile_id == profile_id,
+        Interview.created_at >= seven_days_ago
+    ).count()
+
+    # All-time stats for context
+    total_applied = len(applications)
+    total_offers = sum(1 for a in applications if a.pipeline_status == "offer")
+    batting_avg = total_offers / total_applied if total_applied > 0 else 0
+
+    # Top companies applied to this week
+    week_companies = []
+    for a in week_apps:
+        job = next((j for j in jobs if j.id == a.job_id), None)
+        if job and job.company:
+            week_companies.append(job.company)
+
+    # Top-scored jobs this week
+    top_jobs = sorted(week_jobs, key=lambda j: j.match_score or 0, reverse=True)[:5]
+    top_job_lines = [f"  - {j.title} at {j.company} (score: {j.match_score or 0:.0f})" for j in top_jobs]
+
+    stats = {
+        "new_jobs_found": len(week_jobs),
+        "jobs_shortlisted": len(week_shortlisted),
+        "applications_submitted": len(week_apps),
+        "interviews_scheduled": len(week_interviews),
+        "ai_tools_used": week_docs + week_interview_preps,
+        "total_applied_alltime": total_applied,
+        "total_offers_alltime": total_offers,
+        "batting_avg": round(batting_avg, 4),
+    }
+
+    player_name = profile.name or "the player"
+
+    prompt = f"""You are a veteran baseball radio announcer giving the weekly game summary for a job seeker's search campaign.
+The job seeker's name is {player_name}.
+
+Here are this week's stats (past 7 days):
+- New jobs scouted: {stats['new_jobs_found']}
+- Jobs shortlisted (moved to lineup): {stats['jobs_shortlisted']}
+- Applications submitted (at-bats): {stats['applications_submitted']}
+- Interviews scheduled: {stats['interviews_scheduled']}
+- AI tools used (cover letters, interview prep, resume tailoring): {stats['ai_tools_used']}
+- Season batting average (offers / applications): .{int(stats['batting_avg'] * 1000):03d}
+- Companies swung at this week: {', '.join(week_companies[:8]) if week_companies else 'None yet'}
+- Top prospects scouted:
+{chr(10).join(top_job_lines) if top_job_lines else '  (No new prospects this week)'}
+
+Write a 3-4 paragraph game summary in the style of a colorful baseball radio announcer calling the week's highlights.
+- Use baseball metaphors throughout (at-bats, batting practice, bullpen, lineup, scouting report, etc.)
+- Reference specific numbers from the stats
+- Be encouraging but honest — if activity was low, motivate them to step up to the plate
+- End with 2-3 specific, actionable pieces of advice for next week framed as coaching tips
+- Keep it fun, energetic, and under 350 words
+- Do NOT use markdown formatting — plain text only"""
+
+    provider = get_provider()
+    if provider == "none":
+        summary_text = (
+            f"This week's recap: {stats['new_jobs_found']} new jobs scouted, "
+            f"{stats['jobs_shortlisted']} shortlisted, {stats['applications_submitted']} applications sent. "
+            "AI summary unavailable — no AI provider configured."
+        )
+    else:
+        summary_text = await ai_generate(prompt, max_tokens=800, model_tier="balanced", use_cache=False)
+        if not summary_text:
+            summary_text = (
+                f"Couldn't generate the play-by-play this time. "
+                f"Quick stats: {stats['new_jobs_found']} scouted, {stats['applications_submitted']} applied, "
+                f"{stats['interviews_scheduled']} interviews on deck."
+            )
+
+    return {
+        "summary": summary_text,
+        "stats": stats,
+        "week_start": seven_days_ago.isoformat(),
+        "week_end": now.isoformat(),
+    }
+
+
+# ── Achievements / Badges ────────────────────────────────────────────────
+
+ACHIEVEMENTS = [
+    {
+        "id": "first_hit",
+        "name": "First Hit",
+        "emoji": "\u26be",
+        "hint": "Submit your first application",
+    },
+    {
+        "id": "on_base",
+        "name": "On Base",
+        "emoji": "\U0001f7e2",
+        "hint": "Shortlist 5 jobs",
+    },
+    {
+        "id": "rbi",
+        "name": "RBI",
+        "emoji": "\U0001f3c3",
+        "hint": "Schedule your first interview",
+    },
+    {
+        "id": "home_run",
+        "name": "Home Run",
+        "emoji": "\U0001f3c6",
+        "hint": "Receive a job offer",
+    },
+    {
+        "id": "grand_slam",
+        "name": "Grand Slam",
+        "emoji": "\U0001f4a5",
+        "hint": "Receive 4+ offers",
+    },
+    {
+        "id": "perfect_game",
+        "name": "Perfect Game",
+        "emoji": "\U0001f947",
+        "hint": "100% profile completeness",
+    },
+    {
+        "id": "triple_play",
+        "name": "Triple Play",
+        "emoji": "\U0001f52e",
+        "hint": "Use 3+ AI tools",
+    },
+    {
+        "id": "iron_man",
+        "name": "Iron Man",
+        "emoji": "\U0001f4aa",
+        "hint": "7 consecutive days of activity",
+    },
+    {
+        "id": "slugger",
+        "name": "Slugger",
+        "emoji": "\U0001f3cf",
+        "hint": "Submit 20+ applications",
+    },
+    {
+        "id": "all_star",
+        "name": "All-Star",
+        "emoji": "\u2b50",
+        "hint": "Match score 80+ on any job",
+    },
+    {
+        "id": "gold_glove",
+        "name": "Gold Glove",
+        "emoji": "\U0001f9e4",
+        "hint": "Have your resume analyzed by AI",
+    },
+    {
+        "id": "mvp",
+        "name": "MVP",
+        "emoji": "\U0001f451",
+        "hint": "Complete all Spring Training levels",
+    },
+]
+
+
+@router.get("/profiles/{profile_id}/achievements")
+def get_achievements(profile_id: int, db: Session = Depends(get_db)):
+    """Check various milestones and return unlocked achievement badges."""
+    from sqlalchemy import func as sa_func
+
+    profile = db.query(Profile).filter(Profile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    applications = db.query(Application).filter(Application.profile_id == profile_id).all()
+    jobs = db.query(Job).filter(Job.profile_id == profile_id).all()
+
+    app_count = len(applications)
+    shortlisted_count = sum(1 for j in jobs if j.status in ("liked", "shortlisted"))
+    interview_count = sum(1 for a in applications if a.pipeline_status in ("interview", "screening"))
+    offer_count = sum(1 for a in applications if a.pipeline_status == "offer")
+    has_high_match = any(j.match_score and j.match_score >= 80 for j in jobs)
+
+    # Profile completeness (reuse apply-readiness logic inline)
+    profile_fields = [
+        profile.name, profile.email, profile.phone, profile.location,
+        profile.resume_text or profile.resume_path,
+        profile.target_roles, profile.target_locations,
+        profile.seniority_level, profile.min_salary,
+        profile.remote_preference, profile.industry_preference,
+    ]
+    profile_filled = sum(1 for f in profile_fields if f)
+    profile_score = round(profile_filled / len(profile_fields) * 100)
+
+    # AI tools usage: check for tailored resume docs, interview prep (interviews table), skills audit cache
+    ai_tools_used = 0
+    tailored = db.query(Document).filter(
+        Document.profile_id == profile_id, Document.doc_type == "tailored_resume"
+    ).first()
+    if tailored:
+        ai_tools_used += 1
+
+    interview_records = db.query(Interview).filter(Interview.profile_id == profile_id).first()
+    if interview_records:
+        ai_tools_used += 1
+
+    # Skills audit: check if advisor_data is populated (set by skills-audit / search-advisor)
+    if profile.advisor_data:
+        ai_tools_used += 1
+
+    # Resume analyzed by AI
+    resume_analyzed = profile.profile_analyzed or False
+
+    # Iron Man: 7 consecutive days of activity (jobs created or applications)
+    iron_man = False
+    activity_dates = set()
+    for j in jobs:
+        if j.created_at:
+            activity_dates.add(j.created_at.date())
+    for a in applications:
+        if a.created_at:
+            activity_dates.add(a.created_at.date())
+        if a.updated_at:
+            activity_dates.add(a.updated_at.date())
+
+    if len(activity_dates) >= 7:
+        sorted_dates = sorted(activity_dates)
+        streak = 1
+        for i in range(1, len(sorted_dates)):
+            if (sorted_dates[i] - sorted_dates[i - 1]).days == 1:
+                streak += 1
+                if streak >= 7:
+                    iron_man = True
+                    break
+            else:
+                streak = 1
+
+    # Spring Training: check if all levels complete
+    has_resume = bool(profile.resume_path) or bool(profile.resume_text)
+    target_roles = safe_json(profile.target_roles, [])
+    target_locations = safe_json(profile.target_locations, [])
+    has_basic_fields = bool(profile.name and profile.email and profile.location
+                           and len(target_roles) > 0 and len(target_locations) > 0)
+    has_deep_analysis = bool(profile.seniority_level and (profile.min_salary or profile.availability))
+    deal_breakers = safe_json(profile.deal_breakers, [])
+    has_reporter = bool(profile.remote_preference and profile.industry_preference and len(deal_breakers) > 0)
+    spring_training_complete = has_resume and has_basic_fields and has_deep_analysis and has_reporter
+
+    # Build results
+    unlocked = {
+        "first_hit": app_count >= 1,
+        "on_base": shortlisted_count >= 5,
+        "rbi": interview_count >= 1,
+        "home_run": offer_count >= 1,
+        "grand_slam": offer_count >= 4,
+        "perfect_game": profile_score >= 100,
+        "triple_play": ai_tools_used >= 3,
+        "iron_man": iron_man,
+        "slugger": app_count >= 20,
+        "all_star": has_high_match,
+        "gold_glove": resume_analyzed,
+        "mvp": spring_training_complete,
+    }
+
+    badges = []
+    for ach in ACHIEVEMENTS:
+        badges.append({
+            **ach,
+            "unlocked": unlocked.get(ach["id"], False),
+        })
+
+    earned = sum(1 for b in badges if b["unlocked"])
+    return {
+        "badges": badges,
+        "earned": earned,
+        "total": len(badges),
+    }

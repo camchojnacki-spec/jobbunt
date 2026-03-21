@@ -170,7 +170,9 @@ function showView(name) {
         if (typeof loadReporterCorner === 'function') loadReporterCorner();
         if (typeof loadDugoutCharts === 'function') loadDugoutCharts();
         if (typeof loadBoxScore === 'function') loadBoxScore();
+        if (typeof loadGameSummary === 'function') loadGameSummary();
         if (typeof loadFollowUps === 'function') loadFollowUps();
+        if (typeof loadTrophyCase === 'function') loadTrophyCase();
     }
     if (name === 'jobs') {
         loadSwipeStack();
@@ -1700,18 +1702,24 @@ function buildJobCard(job) {
                 <div class="score-fit-sublabel">Overall fit score</div>
             </div>
         </div>
-        ${reasons.length || concerns.length ? `<div class="card-reasons">
-            ${reasons.map(r => `<span class="reason-tag">${esc(r)}</span>`).join('')}
-            ${concerns.map(c => `<span class="reason-tag concern">${esc(c)}</span>`).join('')}
-        </div>` : ''}
-        ${bd ? `<div class="match-breakdown">
-            ${renderBreakdownBar('Role Fit', bd.role_fit)}
-            ${renderBreakdownBar('Skills', bd.skills)}
-            ${renderBreakdownBar('Location', bd.location)}
-            ${renderBreakdownBar('Compensation', bd.compensation)}
-            ${renderBreakdownBar('Seniority', bd.seniority)}
-            ${renderBreakdownBar('Culture Fit', bd.culture_fit)}
-            ${bd.research_fit !== undefined ? renderBreakdownBar('Deep Research', bd.research_fit) : ''}
+        ${bd || reasons.length || concerns.length ? `
+        <div class="why-score-toggle" onclick="var d=this.parentElement.querySelector('.why-score-detail');d.classList.toggle('open');this.classList.toggle('open')">
+            <span class="why-score-chevron">&#9654;</span> Why this score?
+        </div>
+        <div class="why-score-detail">
+            ${bd ? `<div class="match-breakdown">
+                ${renderBreakdownBar('Role Fit', bd.role_fit)}
+                ${renderBreakdownBar('Skills', bd.skills)}
+                ${renderBreakdownBar('Location', bd.location)}
+                ${renderBreakdownBar('Compensation', bd.compensation)}
+                ${renderBreakdownBar('Seniority', bd.seniority)}
+                ${renderBreakdownBar('Culture Fit', bd.culture_fit)}
+                ${bd.research_fit !== undefined ? renderBreakdownBar('Deep Research', bd.research_fit) : ''}
+            </div>` : ''}
+            ${reasons.length || concerns.length ? `<ul class="why-score-reasons">
+                ${reasons.map(r => `<li class="why-reason">${esc(r)}</li>`).join('')}
+                ${concerns.map(c => `<li class="why-reason concern">${esc(c)}</li>`).join('')}
+            </ul>` : ''}
         </div>` : ''}
     </div>`;
 
@@ -7181,6 +7189,125 @@ window.loadFollowUps = loadFollowUps;
 window.completeFollowUp = completeFollowUp;
 window.draftFollowUpEmail = draftFollowUpEmail;
 window.loadBoxScore = loadBoxScore;
+window.loadGameSummary = loadGameSummary;
+window.generateGameSummary = generateGameSummary;
+window.loadTrophyCase = loadTrophyCase;
+
+// ── Game Summary (Weekly AI Recap) ──────────────────────────────────────
+
+let _gameSummaryCache = null;
+
+async function loadGameSummary() {
+    if (!state.profileId) return;
+    const container = document.getElementById('game-summary-section');
+    if (!container) return;
+
+    // If we already have a cached summary, show it
+    if (_gameSummaryCache) {
+        renderGameSummary(container, _gameSummaryCache);
+        return;
+    }
+
+    // Show the "Get Summary" button
+    container.innerHTML = `<div class="section-card">
+        <h3 style="color:var(--jb-bright)">&#9918; Game Summary</h3>
+        <p style="color:var(--jb-text-2);margin:8px 0 12px">Get your weekly play-by-play recap of the job search.</p>
+        <button class="btn btn-secondary" onclick="generateGameSummary()" id="game-summary-btn">
+            Get This Week's Summary
+        </button>
+    </div>`;
+}
+
+async function generateGameSummary() {
+    const container = document.getElementById('game-summary-section');
+    const btn = document.getElementById('game-summary-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Calling the booth...';
+    }
+
+    try {
+        const data = await api(`/profiles/${state.profileId}/game-summary`);
+        _gameSummaryCache = data;
+        renderGameSummary(container, data);
+    } catch (e) {
+        console.error('Game summary error:', e);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Get This Week\'s Summary';
+        }
+        toast('Failed to generate game summary', 'error');
+    }
+}
+
+function renderGameSummary(container, data) {
+    const stats = data.stats || {};
+    const paragraphs = (data.summary || '').split('\n\n').filter(p => p.trim());
+    const summaryHtml = paragraphs.map(p => `<p style="margin:8px 0;line-height:1.6">${p.replace(/\n/g, '<br>')}</p>`).join('');
+
+    container.innerHTML = `<div class="section-card">
+        <h3 style="color:var(--jb-bright)">&#9918; Game Summary</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin:12px 0">
+            <div class="box-stat">
+                <div class="box-stat-value">${stats.new_jobs_found || 0}</div>
+                <div class="box-stat-label">Scouted</div>
+            </div>
+            <div class="box-stat">
+                <div class="box-stat-value">${stats.jobs_shortlisted || 0}</div>
+                <div class="box-stat-label">Shortlisted</div>
+            </div>
+            <div class="box-stat">
+                <div class="box-stat-value">${stats.applications_submitted || 0}</div>
+                <div class="box-stat-label">At-Bats</div>
+            </div>
+            <div class="box-stat">
+                <div class="box-stat-value">${stats.interviews_scheduled || 0}</div>
+                <div class="box-stat-label">Interviews</div>
+            </div>
+            <div class="box-stat">
+                <div class="box-stat-value">${stats.ai_tools_used || 0}</div>
+                <div class="box-stat-label">AI Tools</div>
+            </div>
+        </div>
+        <div style="background:var(--jb-surface-2);border-radius:8px;padding:16px;margin-top:12px;color:var(--jb-text-1);font-size:14px">
+            ${summaryHtml}
+        </div>
+        <button class="btn btn-secondary" onclick="_gameSummaryCache=null;generateGameSummary()" style="margin-top:12px;font-size:12px">
+            Refresh Summary
+        </button>
+    </div>`;
+}
+
+// ── Trophy Case (Achievements) ──────────────────────────────────────────
+
+async function loadTrophyCase() {
+    if (!state.profileId) return;
+    const container = document.getElementById('dugout-trophy-case');
+    const grid = document.getElementById('trophy-case-grid');
+    const summary = document.getElementById('trophy-case-summary');
+    if (!container || !grid) return;
+
+    try {
+        const data = await api(`/profiles/${state.profileId}/achievements`);
+        if (!data || !data.badges) return;
+
+        container.style.display = 'block';
+
+        grid.innerHTML = data.badges.map(b => `
+            <div class="trophy-badge ${b.unlocked ? 'unlocked' : 'locked'}" title="${esc(b.unlocked ? b.name : b.hint)}">
+                <div class="trophy-badge-hint">${esc(b.unlocked ? b.name + ' - Earned!' : b.hint)}</div>
+                <div class="trophy-badge-icon">${b.emoji}</div>
+                <div class="trophy-badge-name">${esc(b.name)}</div>
+            </div>
+        `).join('');
+
+        if (summary) {
+            summary.textContent = `${data.earned} / ${data.total} badges earned`;
+        }
+    } catch (e) {
+        // Silently fail — trophy case is non-critical
+    }
+}
 
 // ── Follow-Up Reminders ─────────────────────────────────────────────────
 
