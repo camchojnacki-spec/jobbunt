@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260320a">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260320b">
     <script src="https://accounts.google.com/gsi/client" async></script>
 </head>
 <body>
@@ -693,7 +693,7 @@
                         <div class="form-group" id="paste-fallback-group" style="margin-top:8px">
                             <details>
                                 <summary style="font-size:12px;color:var(--jb-text-dim);cursor:pointer">Or paste your resume text</summary>
-                                <textarea id="f-paste-text" rows="5" placeholder="Paste resume text here..." style="margin-top:8px"></textarea>
+                                <textarea id="f-paste-text" rows="12" placeholder="Paste resume text here..." style="margin-top:8px;min-height:200px;resize:vertical"></textarea>
                             </details>
                         </div>
                         <div class="btn-group" style="margin-top:8px">
@@ -1122,6 +1122,12 @@
                     <div class="profile-save-bar">
                         <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
                     </div>
+
+                    <!-- Account Section -->
+                    <div class="card" style="margin-top:16px;border-top:2px solid var(--red)">
+                        <h3 class="card-title" style="color:var(--red)">Account</h3>
+                        <button class="btn btn-secondary" onclick="logout()" style="color:var(--red);border-color:var(--red)">Sign Out</button>
+                    </div>
                 </div>
                 </div><!-- end profile-tab-content-settings -->
             </div>
@@ -1138,6 +1144,6 @@
         <div class="toast-container" id="toast-container"></div>
     </div>
 
-    <script src="/static/js/app.js?v=20260320a"></script>
+    <script src="/static/js/app.js?v=20260320b"></script>
 </body>
 </html>

@@ -172,6 +172,10 @@ def create_profile(data: ProfileCreate, db: Session = Depends(get_db), user: Use
         search_tiers_up=data.search_tiers_up or 0,
         user_id=user.id if user else None,
     )
+    # B01 fix: if resume text was pasted (raw_profile_doc), also set resume_text
+    # so has_resume checks pass downstream
+    if data.raw_profile_doc and not profile.resume_text:
+        profile.resume_text = data.raw_profile_doc
     db.add(profile)
     db.commit()
     db.refresh(profile)
@@ -207,6 +211,11 @@ def update_profile(profile_id: int, data: ProfileUpdate, db: Session = Depends(g
         val = getattr(data, f, None)
         if val is not None:
             setattr(profile, f, json.dumps(val))
+    # B01 fix: if raw_profile_doc is set but resume_text is empty, copy it over
+    # so has_resume checks pass for text-pasted resumes
+    raw_doc = getattr(data, 'raw_profile_doc', None)
+    if raw_doc and not profile.resume_text:
+        profile.resume_text = raw_doc
     db.commit()
     return _profile_dict(profile)
 

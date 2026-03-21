@@ -237,21 +237,16 @@ async def search_indeed(query: str, location: str, limit: int = 25) -> list[dict
     """Scrape Indeed search results — tries multiple approaches for reliability.
 
     Approach order:
-    0. SerpAPI Indeed engine (if SERPAPI_KEY configured — most reliable)
     1. Indeed RSS feed with ca.indeed.com priority for Canadian searches
     2. Direct HTML scrape with fresh client + cookies
     3. Embedded JSON extraction from mosaic provider data
+
+    Note: SerpAPI-based Indeed results come via the "serpapi" source (Google Jobs
+    aggregator) which is handled separately to avoid double-dipping on quota.
     """
-    # ── Method 0: SerpAPI Indeed (bypasses all anti-scraping) ──
-    serpapi_key = os.environ.get("SERPAPI_KEY") or _get_source_config().get("serpapi", {}).get("api_key", "")
-    if serpapi_key:
-        try:
-            serpapi_results = await search_serpapi_indeed(query, location, limit)
-            if serpapi_results:
-                logger.info(f"Indeed via SerpAPI: {len(serpapi_results)} results")
-                return serpapi_results
-        except Exception as e:
-            logger.debug(f"Indeed SerpAPI attempt failed: {e}")
+    # SerpAPI Indeed delegation removed — SerpAPI Google Jobs (which aggregates
+    # Indeed listings) is handled by the "serpapi" source in AVAILABLE_SOURCES.
+    # Calling it here too would double-dip on quota when both sources are active.
 
     jobs = []
     # Detect which Indeed domain to try
@@ -441,6 +436,10 @@ async def _indeed_rss(domain: str, query: str, location: str, limit: int) -> lis
             # Indeed RSS sometimes wraps URLs; also check next sibling
             if not url and link_el and link_el.next_sibling:
                 url = str(link_el.next_sibling).strip()
+            # B16 fix: normalize French Canadian Indeed URLs to English
+            if url:
+                url = re.sub(r'emplois\.ca\.indeed\.com', 'ca.indeed.com', url)
+                url = re.sub(r'emplois\.indeed\.com', 'www.indeed.com', url)
 
             jobs.append({
                 "title": title_el.get_text(strip=True),
@@ -1651,14 +1650,17 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
     jobs = []
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            # Paginate: fetch up to 2 pages (10 results each) if quota allows
-            for page_start in [0, 10]:
-                if page_start > 0:
+            # Paginate using next_page_token from response (Google discontinued `start` param)
+            next_page_token = None
+            for page_num in range(2):  # up to 2 pages
+                if page_num > 0:
                     _serpapi_call_count += 1
                     max_calls = globals().get('_serpapi_max_calls', 20)
                     if _serpapi_call_count > max_calls:
                         logger.info("SerpAPI: skipping page 2 (quota limit)")
                         break
+                    if not next_page_token:
+                        break  # No more pages available
                 params = {
                     "engine": "google_jobs",
                     "q": clean_query,
@@ -1666,8 +1668,8 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
                     "hl": "en",
                     "api_key": api_key,
                 }
-                if page_start > 0:
-                    params["start"] = page_start
+                if next_page_token:
+                    params["next_page_token"] = next_page_token
                 resp = await client.get("https://serpapi.com/search.json", params=params)
                 if resp.status_code != 200:
                     logger.warning(f"SerpAPI returned status {resp.status_code}: {resp.text[:200]}")
@@ -1677,6 +1679,11 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
                 page_results = data.get("jobs_results", [])
                 if not page_results:
                     break
+
+                # Extract next_page_token for subsequent page
+                serpapi_pagination = data.get("serpapi_pagination", {})
+                next_page_token = serpapi_pagination.get("next_page_token")
+
                 for item in page_results[:limit - len(jobs)]:
                     # Extract salary if available
                     salary = ""
@@ -1732,8 +1739,8 @@ async def search_serpapi_google_jobs(query: str, location: str, limit: int = 25)
                         "remote_type": "remote" if detected.get("work_from_home") else "",
                     })
 
-                if len(page_results) < 10:
-                    break  # No more pages
+                if not next_page_token or len(jobs) >= limit:
+                    break  # No more pages or reached limit
 
             if jobs:
                 logger.info(f"SerpAPI Google Jobs: found {len(jobs)} results for '{query}' in '{location}'")

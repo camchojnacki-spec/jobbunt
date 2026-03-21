@@ -127,6 +127,9 @@ function showView(name) {
     if (name === 'hunt') name = 'jobs';
     if (name === 'pipeline') name = 'jobs';
     if (name === 'applications') name = 'jobs';
+    if (name === 'prospects') { name = 'jobs'; setTimeout(() => switchJobsTab('shortlist'), 0); }
+    if (name === 'shortlist') { name = 'jobs'; setTimeout(() => switchJobsTab('shortlist'), 0); }
+    if (name === 'applied') { name = 'jobs'; setTimeout(() => switchJobsTab('applied'), 0); }
     if (name === 'dugout') name = 'home';
     if (name === 'insights') name = 'tools';
     if (name === 'intel') name = 'tools';
@@ -189,6 +192,11 @@ function showView(name) {
         }
     }
     if (name === 'profile') {
+        // Default to Profile tab (not Settings) unless settings was explicitly requested
+        const activeProfileTab = document.querySelector('.profile-tab.active');
+        if (!activeProfileTab || !activeProfileTab.id?.includes('settings')) {
+            switchProfileTab('profile');
+        }
         if (state.profile) populateProfileForm(state.profile);
         if (state.profileId) {
             loadApplyReadiness();
@@ -698,12 +706,15 @@ async function searchJobs() {
 
         // Poll every 4 seconds — refresh grid with new jobs as they arrive
         let lastCount = state.swipeStack?.length || 0;
+        let jobsDetected = false;
+        let task404Count = 0;
         const poller = setInterval(async () => {
             try {
                 const recent = await api(`/profiles/${state.profileId}/jobs/recent`);
                 const newCount = recent.total_pending || 0;
                 if (newCount > lastCount) {
                     lastCount = newCount;
+                    jobsDetected = true;
                     // Refresh the grid with new jobs
                     await loadSwipeStack();
                     renderBrowseView();
@@ -721,6 +732,7 @@ async function searchJobs() {
             await new Promise(r => setTimeout(r, 4000));
             try {
                 const task = await api(`/tasks/${task_id}`);
+                task404Count = 0; // reset on success
                 if (task.status === 'completed') {
                     taskDone = true;
                     const result = task.result || {};
@@ -730,14 +742,25 @@ async function searchJobs() {
                 if (task.status === 'failed') { throw new Error(task.error || 'Search failed'); }
             } catch (e) {
                 if (e.message && !e.message.includes('404')) { clearInterval(poller); throw e; }
+                task404Count++;
+                // If task endpoint always 404s (Cloud Run multi-instance) but jobs appeared, treat as done
+                if (task404Count > 10 && jobsDetected) {
+                    taskDone = true;
+                    toast(`Search complete! ${lastCount} jobs found`, 'success');
+                    break;
+                }
             }
         }
         clearInterval(poller);
 
-        // Final refresh
+        // Final refresh — always reload from DB regardless of task status
         await loadSwipeStack();
         renderBrowseView();
+        if (state.swipeStack?.length > 0 && !taskDone) {
+            toast(`Search complete! ${state.swipeStack.length} jobs found`, 'success');
+        }
         loadStats();
+        if (typeof loadCoachNote === 'function') loadCoachNote();
         _hideSearchBanner();
     } catch (e) {
         toast('Search failed: ' + e.message, 'error');
@@ -762,6 +785,8 @@ function _showSearchBanner(msg) {
         banner.id = 'search-progress-banner';
         toolbar.parentNode.insertBefore(banner, toolbar.nextSibling);
     }
+    // Start elapsed timer
+    state._searchStartTime = Date.now();
     if (banner) {
         banner.style.display = 'block';
         banner.innerHTML = `
@@ -778,7 +803,8 @@ function _updateSearchBanner(count) {
     const el = document.getElementById('search-banner-count');
     if (el) el.textContent = count + ' found';
     const detail = document.getElementById('search-banner-detail');
-    if (detail) detail.textContent = 'New jobs appearing below...';
+    const elapsed = state._searchStartTime ? Math.round((Date.now() - state._searchStartTime) / 1000) : 0;
+    if (detail) detail.textContent = `Scanning sources... ${elapsed}s elapsed`;
 }
 
 function _hideSearchBanner() {
@@ -1403,7 +1429,7 @@ function renderJobList(jobs) {
         return `<div class="job-list-row ${selected}" data-job-id="${job.id}" onclick="selectJobFromList(${job.id}, ${i})">
             <div class="list-score" style="color:${scoreColor}">${Math.round(job.match_score)}</div>
             <div class="list-main">
-                <div class="list-title">${esc(job.title)}</div>
+                <div class="list-title" title="${esc(job.title)}">${esc(job.title)}</div>
                 <div class="list-meta">
                     <span class="list-company">${esc(job.company)}</span>
                     <span class="list-location">${esc(job.location || '')}</span>
@@ -1519,6 +1545,12 @@ async function quickAction(jobId, index, action) {
     const job = state.swipeStack.find(j => j.id === jobId);
     if (!job) return;
 
+    // B06 fix: Confirm before applying
+    if (action === 'like') {
+        const confirmed = await showApplyConfirmation(job);
+        if (!confirmed) return;
+    }
+
     // Remove from stack visually
     state.swipeStack = state.swipeStack.filter(j => j.id !== jobId);
 
@@ -1556,6 +1588,8 @@ async function quickAction(jobId, index, action) {
         }
 
         loadStats();
+        // B08/B09 fix: refresh home widgets after actions so Coach's Note and Market Pulse stay current
+        if (typeof loadCoachNote === 'function') loadCoachNote();
     } catch (e) {
         if (loadingToastId) dismissToast(loadingToastId);
         toast('Action failed: ' + e.message, 'error');
@@ -2063,15 +2097,24 @@ async function swipeAction(action) {
     if (state.browseMode === 'card') {
         job = state.swipeStack[state.currentCardIndex];
         if (!job) return;
-        state.currentCardIndex++;
-        renderCurrentCard();
     } else {
         job = state.swipeStack.find(j => j.id === state.selectedJobId);
         if (!job) { toast('Select a job first', 'info'); return; }
-        // Remove from stack and close detail panel
+    }
+
+    // B06 fix: Confirm before applying
+    if (action === 'like') {
+        const confirmed = await showApplyConfirmation(job);
+        if (!confirmed) return;
+    }
+
+    // Now perform the visual updates after confirmation
+    if (state.browseMode === 'card') {
+        state.currentCardIndex++;
+        renderCurrentCard();
+    } else {
         state.swipeStack = state.swipeStack.filter(j => j.id !== state.selectedJobId);
         closeJobDetail();
-        // Select next job if available
         if (state.swipeStack.length > 0) {
             const nextIdx = Math.min(state.currentCardIndex, state.swipeStack.length - 1);
             state.selectedJobId = state.swipeStack[nextIdx]?.id || null;
@@ -2111,6 +2154,7 @@ async function swipeAction(action) {
         }
 
         loadStats();
+        if (typeof loadCoachNote === 'function') loadCoachNote();
     } catch (e) {
         if (loadingToastId) dismissToast(loadingToastId);
         toast('Swipe failed: ' + e.message, 'error');
@@ -2970,6 +3014,21 @@ function esc(str) {
     return div.innerHTML;
 }
 
+// B14 fix: Simple markdown renderer for AI output (bold, headers, bullets, line breaks)
+function renderMarkdown(text) {
+    if (!text) return '';
+    return esc(text)
+        .replace(/^### (.+)$/gm, '<h4 style="margin:12px 0 4px;font-size:14px;color:var(--jb-text-1)">$1</h4>')
+        .replace(/^## (.+)$/gm, '<h3 style="margin:16px 0 6px;font-size:15px;color:var(--jb-text-1)">$1</h3>')
+        .replace(/^# (.+)$/gm, '<h2 style="margin:20px 0 8px;font-size:17px;color:var(--jb-text-1)">$1</h2>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/^[-•] (.+)$/gm, '<li style="margin-left:16px;list-style:disc">$1</li>')
+        .replace(/(<li[^>]*>.*<\/li>\n?)+/g, '<ul style="margin:4px 0;padding-left:8px">$&</ul>')
+        .replace(/\n{2,}/g, '<br><br>')
+        .replace(/\n/g, '<br>');
+}
+
 function toast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     const el = document.createElement('div');
@@ -3000,6 +3059,36 @@ function setActionButtonsEnabled(enabled) {
     } else {
         bar.classList.add('action-bar--loading');
     }
+}
+
+// B06 fix: Apply confirmation dialog
+function showApplyConfirmation(job) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay apply-confirm-overlay';
+        overlay.innerHTML = `
+            <div class="apply-confirm-dialog">
+                <h3>Apply to this job?</h3>
+                <div class="apply-confirm-job">
+                    <strong>${esc(job.title)}</strong>
+                    <span>${esc(job.company)}</span>
+                    ${job.location ? `<span class="apply-confirm-loc">${esc(job.location)}</span>` : ''}
+                    ${job.match_score ? `<span class="score-badge" style="background:${job.match_score >= 70 ? 'var(--green)' : job.match_score >= 40 ? 'var(--orange)' : 'var(--red)'}">${job.match_score}</span>` : ''}
+                </div>
+                <p style="color:var(--text-dim);font-size:13px;margin:12px 0">This will move the job to your Applied pipeline. You can track it from the Applied tab.</p>
+                <div class="apply-confirm-actions">
+                    <button class="btn btn-secondary" id="apply-cancel">Cancel</button>
+                    <button class="cta-btn" id="apply-confirm">Apply</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        overlay.querySelector('#apply-confirm').addEventListener('click', () => { overlay.remove(); resolve(true); });
+        overlay.querySelector('#apply-cancel').addEventListener('click', () => { overlay.remove(); resolve(false); });
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
+        document.addEventListener('keydown', function escHandler(e) {
+            if (e.key === 'Escape') { overlay.remove(); resolve(false); document.removeEventListener('keydown', escHandler); }
+        });
+    });
 }
 
 // ── Settings Page ───────────────────────────────────────────────────────
@@ -3814,7 +3903,7 @@ function showTailoredResumeModal(content, jobTitle) {
                 <h3 style="margin:0;font-size:16px;color:var(--jb-text-1)">Tailored Resume — ${esc(jobTitle)}</h3>
                 <button onclick="closeTailoredResumeModal()" style="background:none;border:none;color:var(--jb-text-2);font-size:22px;cursor:pointer;padding:0 4px">&times;</button>
             </div>
-            <div style="white-space:pre-wrap;font-family:var(--jb-font);font-size:13px;line-height:1.6;padding:20px;color:var(--jb-text-1)">${esc(content)}</div>
+            <div class="tailored-resume-body" style="font-family:var(--jb-font);font-size:13px;line-height:1.6;padding:20px;color:var(--jb-text-1)">${renderMarkdown(content)}</div>
             <div style="display:flex;gap:8px;padding:16px 20px;border-top:1px solid var(--jb-border)">
                 <button onclick="copyTailoredResume()" class="btn btn-primary btn-sm">Copy to Clipboard</button>
                 <button onclick="downloadTailoredResume()" class="btn btn-secondary btn-sm">Download</button>
@@ -3823,6 +3912,9 @@ function showTailoredResumeModal(content, jobTitle) {
     modal.addEventListener('click', (e) => {
         if (e.target === modal) closeTailoredResumeModal();
     });
+    // B11 fix: Escape key closes modal
+    const escHandler = (e) => { if (e.key === 'Escape') { closeTailoredResumeModal(); document.removeEventListener('keydown', escHandler); } };
+    document.addEventListener('keydown', escHandler);
     document.body.appendChild(modal);
 }
 
@@ -3953,6 +4045,9 @@ function showInterviewPrepModal(data, jobTitle) {
     modal.addEventListener('click', (e) => {
         if (e.target === modal) closeInterviewPrepModal();
     });
+    // B11 fix: Escape key closes modal
+    const escHandler = (e) => { if (e.key === 'Escape') { closeInterviewPrepModal(); document.removeEventListener('keydown', escHandler); } };
+    document.addEventListener('keydown', escHandler);
     document.body.appendChild(modal);
 }
 
@@ -4276,7 +4371,8 @@ async function loadShortlist() {
     </div>`;
 
     try {
-        const jobs = await api(`/profiles/${state.profileId}/shortlist`);
+        const shortlistData = await api(`/profiles/${state.profileId}/shortlist`);
+        const jobs = shortlistData.jobs || shortlistData || [];
         if (jobs.length === 0) {
             content.innerHTML = `<div class="empty-state">
                 <div class="empty-state-art">
@@ -6417,13 +6513,15 @@ function loadCoachNote() {
         const totalFields = fields.length + targetFields.length;
         const completeness = Math.round((filledCount / totalFields) * 100);
 
+        // B08 fix: Use swipeStack (actual jobs) + fetch stats for accurate counts
+        const allJobs = state.swipeStack || state.jobs || [];
         if (completeness < 50) {
             message = 'Answering Reporter Corner questions will sharpen your job matches. Your profile is ' + completeness + '% complete.';
-        } else if (!state.jobs || state.jobs.length === 0) {
-            message = 'Your profile is looking good! Hit Search Jobs in Scouting to find opportunities.';
+        } else if (allJobs.length === 0) {
+            message = 'Your profile is looking good! Hit Search Jobs on the Jobs tab to find opportunities.';
         } else {
-            const shortlisted = (state.jobs || []).filter(j => j.status === 'shortlisted').length;
-            const applied = (state.jobs || []).filter(j => j.status === 'liked' || j.status === 'applied').length;
+            const shortlisted = allJobs.filter(j => j.status === 'shortlisted').length;
+            const applied = allJobs.filter(j => j.status === 'liked' || j.status === 'applied').length;
             if (shortlisted === 0 && applied === 0) {
                 message = 'Review your search results and shortlist jobs that interest you.';
             } else if (shortlisted > 0 && applied === 0) {
@@ -6773,7 +6871,9 @@ function switchJobsTab(tab) {
     }
     if (appliedSection) {
         appliedSection.style.display = tab === 'applied' ? 'block' : 'none';
-        if (tab === 'applied' && typeof loadPipelineData === 'function') loadPipelineData();
+        if (tab === 'applied') {
+            if (typeof loadApplications === 'function') loadApplications();
+        }
     }
 
     state.activeJobsTab = tab;

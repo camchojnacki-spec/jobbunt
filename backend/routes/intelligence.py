@@ -410,12 +410,17 @@ BE SPECIFIC: Reference their actual resume content, job titles, companies, and d
             )
             if isinstance(advisor, list) or (isinstance(advisor, dict) and "overall_assessment" not in advisor):
                 advisor = None
+    except asyncio.TimeoutError:
+        logger.warning("Search advisor generation timed out")
+        advisor = None
+        error_reason = "Analysis timed out — the AI service is slow. Please try again."
     except Exception as e:
         logger.warning(f"Search advisor generation failed: {e}", exc_info=True)
         advisor = None
+        error_reason = f"AI analysis failed: {type(e).__name__}. Please try again."
 
     if advisor is None:
-        return {"advisor": None, "reason": "AI analysis could not be generated — try again in a moment"}
+        return {"advisor": None, "reason": error_reason if 'error_reason' in dir() else "AI analysis could not be generated — try again in a moment"}
 
     # Store advisor insights on the profile so the scorer can use them for boosting
     try:
@@ -804,11 +809,17 @@ Return JSON:
             )
             if isinstance(ai_insights, list) or (isinstance(ai_insights, dict) and "market_summary" not in ai_insights):
                 ai_insights = None
+    except asyncio.TimeoutError:
+        logger.warning("AI insights generation timed out")
+        ai_insights = None
     except Exception as e:
         logger.warning(f"AI insights generation failed: {e}")
         ai_insights = None
 
-    return {"ai_insights": ai_insights}
+    return {
+        "ai_insights": ai_insights,
+        "ai_error": "AI analysis timed out or failed — try again" if ai_insights is None else None
+    }
 
 
 # ── Apply Readiness ──────────────────────────────────────────────────────
@@ -939,14 +950,34 @@ def get_apply_readiness(profile_id: int, db: Session = Depends(get_db)):
     if roles and job_count > 0:
         role_match_count = 0
         for role in roles:
+            # Check exact match first, then keyword match for multi-word roles
             matching = db.query(Job).filter(
                 Job.profile_id == profile_id,
                 Job.title.ilike(f"%{role}%")
             ).count()
+            if matching == 0 and len(role.split()) >= 2:
+                # Try matching key words from the role (e.g. "Security Architect" matches "IT Security Architect")
+                keywords = [w for w in role.split() if len(w) > 3 and w.lower() not in ('senior', 'junior', 'lead', 'staff', 'principal')]
+                if keywords:
+                    from sqlalchemy import and_
+                    keyword_filters = [Job.title.ilike(f"%{kw}%") for kw in keywords[:3]]
+                    matching = db.query(Job).filter(
+                        Job.profile_id == profile_id,
+                        and_(*keyword_filters)
+                    ).count()
             if matching > 0:
                 role_match_count += 1
-        roles_realistic = role_match_count > 0
-        roles_detail = f"{role_match_count}/{len(roles)} target roles found in listings" if role_match_count > 0 else "No matching jobs found - consider broadening"
+        # Also count high-scoring jobs as evidence of market relevance
+        strong_matches = db.query(Job).filter(
+            Job.profile_id == profile_id, Job.match_score >= 60
+        ).count()
+        roles_realistic = role_match_count > 0 or strong_matches >= 5
+        if role_match_count > 0:
+            roles_detail = f"{role_match_count}/{len(roles)} target roles found in listings"
+        elif strong_matches >= 5:
+            roles_detail = f"{strong_matches} strong matches (score 60+) found"
+        else:
+            roles_detail = "No matching jobs found - consider broadening"
     app_quality.append(check("Target roles match market", roles_realistic, roles_detail, "scroll:f-roles-input"))
     add_search_category("Application Quality", app_quality)
 
@@ -1166,7 +1197,19 @@ IMPORTANT: Only suggest skills using standard industry terminology (e.g. "NIST C
 Each skill should be a concise 1-4 word term that recruiters search for."""
 
         try:
-            ai_audit = await ai_generate_json(prompt, max_tokens=1200, model_tier="balanced")
+            ai_audit = await asyncio.wait_for(
+                ai_generate_json(prompt, max_tokens=1200, model_tier="balanced"),
+                timeout=60.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Skills audit AI timed out, retrying with fast tier...")
+            try:
+                ai_audit = await asyncio.wait_for(
+                    ai_generate_json(prompt, max_tokens=1200, model_tier="fast"),
+                    timeout=45.0
+                )
+            except Exception:
+                ai_audit = None
         except Exception as e:
             logger.warning(f"Skills audit AI failed: {e}")
             ai_audit = None
@@ -1818,11 +1861,17 @@ async def get_box_score(profile_id: int, db: Session = Depends(get_db)):
     scores = [j.match_score for j in jobs if j.match_score is not None and j.match_score > 0]
     avg_score = sum(scores) / len(scores) if scores else 0
 
-    # Source breakdown
+    # Source breakdown — use sources_seen for consistency across views (B15 fix)
     source_breakdown = {}
     for j in jobs:
-        src = j.source or "unknown"
-        source_breakdown[src] = source_breakdown.get(src, 0) + 1
+        try:
+            srcs = json.loads(j.sources_seen or "[]") if j.sources_seen else []
+        except (json.JSONDecodeError, TypeError):
+            srcs = []
+        if not srcs:
+            srcs = [j.source or "unknown"]
+        for src in srcs:
+            source_breakdown[src] = source_breakdown.get(src, 0) + 1
 
     # Score distribution
     buckets = {"0-20": 0, "21-40": 0, "41-60": 0, "61-80": 0, "81-100": 0}

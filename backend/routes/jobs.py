@@ -21,7 +21,7 @@ from backend.services.enrichment import enrich_job, analyze_profile
 from backend.services.browser_scraper import build_search_urls, get_extractor, DETAIL_EXTRACTOR, SCROLL_AND_LOAD, PAGINATION_URLS
 from backend.tasks import run_background, find_running_task
 from backend.utils import safe_json
-from backend.serializers import _job_dict, _application_dict, _job_completeness
+from backend.serializers import _job_dict, _application_dict, _job_completeness, _preload_companies
 from backend.routes._helpers import (
     _get_profile_for_user, _safe_enrich, _safe_score, _rescore_progress,
 )
@@ -120,9 +120,10 @@ async def _bg_search_and_score(profile_id: int, sources: list[str] | None):
         new_jobs = save_scraped_jobs(db, profile_id, raw_jobs)
 
         # 3. QUICK RULE-BASED SCORING
+        cmap = _preload_companies(db, new_jobs)
         for idx, job in enumerate(new_jobs):
             try:
-                company = db.query(Company).filter(Company.id == job.company_id).first() if job.company_id else None
+                company = cmap.get(job.company_id) if job.company_id else None
                 result = score_job_multidim(job, profile, company)
                 job.match_score = result["score"]
                 job.match_reasons = json.dumps(result["reasons"])
@@ -212,8 +213,9 @@ def get_recent_jobs(profile_id: int, since: Optional[str] = None,
         except Exception:
             pass
     jobs = query.order_by(Job.match_score.desc()).limit(50).all()
+    cmap = _preload_companies(db, jobs)
     return {
-        "jobs": [_job_dict(j, db) for j in jobs],
+        "jobs": [_job_dict(j, company_map=cmap) for j in jobs],
         "count": len(jobs),
         "total_pending": db.query(Job).filter(Job.profile_id == profile_id, Job.status == "pending").count()
     }
@@ -265,9 +267,10 @@ async def import_browser_jobs(
     db.commit()
 
     # Quick rule-based scoring immediately — batch commits every 10
+    cmap = _preload_companies(db, new_jobs)
     for idx, job in enumerate(new_jobs):
         try:
-            company = db.query(Company).filter(Company.id == job.company_id).first() if job.company_id else None
+            company = cmap.get(job.company_id) if job.company_id else None
             result = score_job_multidim(job, profile, company)
             job.match_score = result["score"]
             job.match_reasons = json.dumps(result["reasons"])
@@ -345,10 +348,16 @@ def list_jobs(
     status: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
     min_score: float = Query(0),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_optional_user),
 ):
-    """List jobs for a profile, optionally filtered by status and source."""
+    """List jobs for a profile, optionally filtered by status and source.
+
+    Supports pagination via ``limit`` (default 100, max 500) and ``offset``.
+    Response includes ``total`` count so the frontend can render paging controls.
+    """
     _get_profile_for_user(profile_id, user, db)  # ownership check
     query = db.query(Job).filter(Job.profile_id == profile_id)
     if status:
@@ -363,8 +372,16 @@ def list_jobs(
         )
     if min_score > 0:
         query = query.filter(Job.match_score >= min_score)
-    jobs = query.order_by(Job.match_score.desc()).all()
-    return [_job_dict(j, db) for j in jobs]
+
+    total = query.count()
+    jobs = query.order_by(Job.match_score.desc()).offset(offset).limit(limit).all()
+    cmap = _preload_companies(db, jobs)
+    return {
+        "jobs": [_job_dict(j, company_map=cmap) for j in jobs],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/profiles/{profile_id}/swipe")
@@ -391,7 +408,9 @@ def get_swipe_stack(
             continue
         ready_jobs.append(j)
 
-    return [_job_dict(j, db) for j in ready_jobs[:limit]]
+    ready_jobs = ready_jobs[:limit]
+    cmap = _preload_companies(db, ready_jobs)
+    return [_job_dict(j, company_map=cmap) for j in ready_jobs]
 
 
 @router.post("/jobs/{job_id}/swipe")
@@ -549,9 +568,16 @@ async def rescore_all_jobs(profile_id: int, background_tasks: BackgroundTasks, d
 
 
 async def _bg_rescore(profile_id: int):
-    """Background rescore task — uses its own DB session."""
+    """Background rescore task — uses its own DB session.
+
+    Parallelizes AI scoring with a semaphore (max 5 concurrent) for throughput.
+    Falls back to rule-based scoring if AI fails for individual jobs.
+    """
     from backend.database import SessionLocal
     db = SessionLocal()
+    sem = asyncio.Semaphore(5)
+    scored_counter = {"n": 0}  # mutable counter shared across tasks
+
     try:
         profile = db.query(Profile).filter(Profile.id == profile_id).first()
         if not profile:
@@ -560,21 +586,29 @@ async def _bg_rescore(profile_id: int):
 
         jobs = db.query(Job).filter(Job.profile_id == profile_id).all()
         total = len(jobs)
-        scored = 0
+        cmap = _preload_companies(db, jobs)
 
-        for job in jobs:
-            company = db.query(Company).filter(Company.id == job.company_id).first() if job.company_id else None
-            try:
-                await score_and_update_job_ai(db, job, profile, company)
-            except Exception:
+        async def _score_one(job):
+            async with sem:
+                company = cmap.get(job.company_id) if job.company_id else None
                 try:
-                    score_and_update_job(db, job, profile, company)
+                    await score_and_update_job_ai(db, job, profile, company)
                 except Exception:
-                    pass
-            scored += 1
-            _rescore_progress[profile_id] = {"current": scored, "total": total, "status": "running"}
+                    try:
+                        score_and_update_job(db, job, profile, company)
+                    except Exception:
+                        pass
+                scored_counter["n"] += 1
+                _rescore_progress[profile_id] = {
+                    "current": scored_counter["n"], "total": total, "status": "running",
+                }
 
-        _rescore_progress[profile_id] = {"current": scored, "total": total, "status": "done"}
+        await asyncio.gather(
+            *[_score_one(job) for job in jobs],
+            return_exceptions=True,
+        )
+
+        _rescore_progress[profile_id] = {"current": scored_counter["n"], "total": total, "status": "done"}
     except Exception as e:
         logger.error(f"Background rescore failed: {e}", exc_info=True)
         _rescore_progress[profile_id] = {"current": 0, "total": 0, "status": "error"}
@@ -809,8 +843,9 @@ async def deep_research_shortlist(profile_id: int, db: Session = Depends(get_db)
     ).order_by(Job.match_score.desc()).limit(10).all()
 
     researched = 0
+    cmap = _preload_companies(db, jobs)
     for job in jobs:
-        company = db.query(Company).filter(Company.id == job.company_id).first() if job.company_id else None
+        company = cmap.get(job.company_id) if job.company_id else None
         try:
             await _deep_research(db, job, profile, company)
             researched += 1
@@ -823,15 +858,23 @@ async def deep_research_shortlist(profile_id: int, db: Session = Depends(get_db)
 # ── Shortlist ─────────────────────────────────────────────────────────
 
 @router.get("/profiles/{profile_id}/shortlist")
-def get_shortlist(profile_id: int, db: Session = Depends(get_db)):
-    """Get all shortlisted jobs for a profile."""
-    jobs = (
-        db.query(Job)
-        .filter(Job.profile_id == profile_id, Job.status == "shortlisted")
-        .order_by(Job.match_score.desc())
-        .all()
-    )
-    return [_job_dict(j, db) for j in jobs]
+def get_shortlist(
+    profile_id: int,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """Get shortlisted jobs for a profile (paginated)."""
+    base = db.query(Job).filter(Job.profile_id == profile_id, Job.status == "shortlisted")
+    total = base.count()
+    jobs = base.order_by(Job.match_score.desc()).offset(offset).limit(limit).all()
+    cmap = _preload_companies(db, jobs)
+    return {
+        "jobs": [_job_dict(j, company_map=cmap) for j in jobs],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.post("/jobs/{job_id}/unshortlist")

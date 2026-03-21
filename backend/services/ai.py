@@ -11,6 +11,8 @@ Model Tiers (matched to task complexity):
 import os
 import json
 import re
+import hashlib
+import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -78,25 +80,114 @@ def get_provider() -> str:
     return "none"
 
 
-async def ai_generate(prompt: str, max_tokens: int = 1500, model_tier: str = "fast") -> str:
+# ── AI Cache helpers ──────────────────────────────────────────────────────
+
+# TTL defaults per model tier (hours)
+_CACHE_TTL = {
+    "flash":    24,
+    "fast":     24,
+    "balanced": 24,
+    "smart":    24,
+    "deep":     1,    # Market-sensitive / complex reasoning — shorter TTL
+}
+
+
+def _cache_key(prompt: str, model_tier: str) -> str:
+    """SHA-256 hash of prompt + model_tier for cache lookup."""
+    raw = f"{model_tier}:{prompt}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _cache_get(key: str) -> str | None:
+    """Look up a non-expired cached response. Returns None on miss."""
+    from backend.database import SessionLocal
+    from backend.models.models import AICache
+    db = SessionLocal()
+    try:
+        row = db.query(AICache).filter(AICache.cache_key == key).first()
+        if row is None:
+            return None
+        expires_at = row.created_at + datetime.timedelta(hours=row.ttl_hours)
+        if datetime.datetime.utcnow() > expires_at:
+            # Expired — delete and treat as miss
+            db.delete(row)
+            db.commit()
+            return None
+        return row.response
+    except Exception as e:
+        logger.debug(f"AI cache read error: {e}")
+        return None
+    finally:
+        db.close()
+
+
+def _cache_put(key: str, response: str, model_tier: str, ttl_hours: int) -> None:
+    """Store a response in the cache (upsert)."""
+    from backend.database import SessionLocal
+    from backend.models.models import AICache
+    db = SessionLocal()
+    try:
+        row = db.query(AICache).filter(AICache.cache_key == key).first()
+        if row:
+            row.response = response
+            row.model_tier = model_tier
+            row.ttl_hours = ttl_hours
+            row.created_at = datetime.datetime.utcnow()
+        else:
+            row = AICache(
+                cache_key=key,
+                response=response,
+                model_tier=model_tier,
+                ttl_hours=ttl_hours,
+                created_at=datetime.datetime.utcnow(),
+            )
+            db.add(row)
+        db.commit()
+    except Exception as e:
+        logger.debug(f"AI cache write error: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def ai_generate(prompt: str, max_tokens: int = 1500, model_tier: str = "fast",
+                      use_cache: bool = True) -> str:
     """Generate text using whatever AI provider is available.
 
     model_tier: 'flash' for cheap/quick, 'balanced' for quality, 'deep' for complex reasoning.
     Legacy values 'fast' and 'smart' still work.
+    use_cache: When True (default), check/store results in the ai_cache table.
     """
+    # ── Cache lookup ──────────────────────────────────────────────────
+    key = _cache_key(prompt, model_tier) if use_cache else None
+    if use_cache:
+        cached = _cache_get(key)
+        if cached is not None:
+            logger.debug(f"AI cache hit for tier={model_tier} key={key[:12]}…")
+            return cached
+
+    # ── Generate ──────────────────────────────────────────────────────
     provider = get_provider()
 
     if provider == "anthropic":
-        return await _anthropic_generate(prompt, max_tokens, model_tier)
+        result = await _anthropic_generate(prompt, max_tokens, model_tier)
     elif provider == "gemini":
-        return await _gemini_generate(prompt, max_tokens, model_tier)
+        result = await _gemini_generate(prompt, max_tokens, model_tier)
     else:
         return ""
 
+    # ── Cache store (only non-empty responses) ────────────────────────
+    if use_cache and result:
+        ttl = _CACHE_TTL.get(model_tier, 24)
+        _cache_put(key, result, model_tier, ttl)
 
-async def ai_generate_json(prompt: str, max_tokens: int = 1500, model_tier: str = "fast") -> dict | list | None:
+    return result
+
+
+async def ai_generate_json(prompt: str, max_tokens: int = 1500, model_tier: str = "fast",
+                           use_cache: bool = True) -> dict | list | None:
     """Generate and parse JSON from AI. Returns None if unavailable or parse fails."""
-    text = await ai_generate(prompt, max_tokens, model_tier)
+    text = await ai_generate(prompt, max_tokens, model_tier, use_cache=use_cache)
     if not text:
         return None
 

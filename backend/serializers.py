@@ -6,6 +6,15 @@ from backend.services.enrichment import company_dict
 from backend.utils import safe_json, safe_json_list
 
 
+def _preload_companies(db, jobs) -> dict:
+    """Batch-load Company objects for a list of jobs, returning {id: Company}."""
+    company_ids = {j.company_id for j in jobs if j.company_id}
+    if not company_ids:
+        return {}
+    companies = db.query(Company).filter(Company.id.in_(company_ids)).all()
+    return {c.id: c for c in companies}
+
+
 def _job_completeness(j: Job) -> int:
     """Score 0-100 how complete a job's data is for presentation."""
     score = 0
@@ -95,12 +104,24 @@ def _profile_dict(p: Profile) -> dict:
     }
 
 
-def _job_dict(j: Job, db=None) -> dict:
+def _job_dict(j: Job, db=None, company_map: dict | None = None) -> dict:
+    """Serialize a Job to dict.
+
+    Args:
+        db: DB session for lazy company lookup (single-job endpoints).
+        company_map: Pre-loaded {company_id: Company} dict to avoid N+1 queries
+                     in list endpoints.  Takes priority over ``db`` lookup.
+    """
     company_data = None
-    if j.company_id and db:
-        company = db.query(Company).filter(Company.id == j.company_id).first()
-        if company:
-            company_data = company_dict(company)
+    if j.company_id:
+        if company_map is not None:
+            company = company_map.get(j.company_id)
+            if company:
+                company_data = company_dict(company)
+        elif db:
+            company = db.query(Company).filter(Company.id == j.company_id).first()
+            if company:
+                company_data = company_dict(company)
 
     return {
         "id": j.id,

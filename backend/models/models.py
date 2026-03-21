@@ -345,6 +345,25 @@ class Contact(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class BackgroundTask(Base):
+    """Persistent storage for background task state (survives Cloud Run redeployments)."""
+    __tablename__ = "background_tasks"
+
+    id = Column(String(36), primary_key=True)  # UUID
+    task_type = Column(String(100), nullable=False)
+    profile_id = Column(Integer, nullable=True)
+    status = Column(String(20), nullable=False, default="running")  # running, completed, failed
+    result = Column(Text, nullable=True)  # JSON-serialized result
+    error = Column(Text, nullable=True)
+    started_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_bg_tasks_status", "status"),
+        Index("ix_bg_tasks_type_profile", "task_type", "profile_id"),
+    )
+
+
 class AICache(Base):
     __tablename__ = "ai_cache"
     id = Column(Integer, primary_key=True, autoincrement=True)

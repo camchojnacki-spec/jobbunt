@@ -6575,3 +6575,67 @@ select:focus {
     color: var(--jb-bright);
     border-bottom-color: var(--jb-bright);
 }
+
+/* ── B06: Apply Confirmation Dialog ── */
+.apply-confirm-overlay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.apply-confirm-dialog {
+    background: var(--jb-bg-secondary);
+    border: 1px solid var(--jb-border);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.apply-confirm-dialog h3 {
+    margin: 0 0 16px;
+    font-size: 18px;
+    color: var(--jb-text-1);
+}
+.apply-confirm-job {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px;
+    background: var(--jb-bg-tertiary);
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+.apply-confirm-job strong {
+    font-size: 15px;
+    color: var(--jb-text-1);
+}
+.apply-confirm-job span {
+    font-size: 13px;
+    color: var(--jb-text-2);
+}
+.apply-confirm-loc {
+    font-size: 12px !important;
+    color: var(--jb-text-dim) !important;
+}
+.apply-confirm-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 16px;
+}
+
+/* ── B14: Tailored Resume Markdown ── */
+.tailored-resume-body h2, .tailored-resume-body h3, .tailored-resume-body h4 {
+    color: var(--jb-text-1);
+}
+.tailored-resume-body strong {
+    color: var(--jb-text-1);
+    font-weight: 600;
+}
+.tailored-resume-body ul {
+    margin: 4px 0;
+    padding-left: 20px;
+}
+.tailored-resume-body li {
+    margin-bottom: 4px;
+}

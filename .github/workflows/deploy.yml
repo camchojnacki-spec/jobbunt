@@ -43,7 +43,8 @@ jobs:
             DATABASE_URL=${{ secrets.DATABASE_URL }}
             GCS_BUCKET=${{ secrets.GCS_BUCKET }}
             ENV=production
-          flags: '--add-cloudsql-instances=${{ secrets.CLOUD_SQL_CONNECTION }}'
+            ALLOWED_ORIGINS=https://jobbunt-829547589641.us-east1.run.app
+          flags: '--add-cloudsql-instances=${{ secrets.CLOUD_SQL_CONNECTION }} --timeout=300'
 
       - name: Show URL
         run: echo "Deployed to ${{ steps.deploy.outputs.url }}"

@@ -181,6 +181,18 @@ def _create_new_tables():
                 ttl_hours INTEGER DEFAULT 168
             )
         """,
+        "background_tasks": """
+            CREATE TABLE IF NOT EXISTS background_tasks (
+                id VARCHAR(36) PRIMARY KEY,
+                task_type VARCHAR(100) NOT NULL,
+                profile_id INTEGER,
+                status VARCHAR(20) NOT NULL DEFAULT 'running',
+                result TEXT,
+                error TEXT,
+                started_at TIMESTAMP NOT NULL,
+                completed_at TIMESTAMP
+            )
+        """,
     }
 
     # PostgreSQL equivalents (SERIAL instead of AUTOINCREMENT)
@@ -270,6 +282,18 @@ def _create_new_tables():
                 ttl_hours INTEGER DEFAULT 168
             )
         """,
+        "background_tasks": """
+            CREATE TABLE IF NOT EXISTS background_tasks (
+                id VARCHAR(36) PRIMARY KEY,
+                task_type VARCHAR(100) NOT NULL,
+                profile_id INTEGER,
+                status VARCHAR(20) NOT NULL DEFAULT 'running',
+                result TEXT,
+                error TEXT,
+                started_at TIMESTAMP NOT NULL,
+                completed_at TIMESTAMP
+            )
+        """,
     }
 
     use_pg = not _is_sqlite()
@@ -299,6 +323,8 @@ def _create_new_tables():
             "CREATE INDEX IF NOT EXISTS ix_contacts_profile_id ON contacts(profile_id)",
             "CREATE INDEX IF NOT EXISTS ix_contacts_company_id ON contacts(company_id)",
             "CREATE INDEX IF NOT EXISTS ix_ai_cache_cache_key ON ai_cache(cache_key)",
+            "CREATE INDEX IF NOT EXISTS ix_bg_tasks_status ON background_tasks(status)",
+            "CREATE INDEX IF NOT EXISTS ix_bg_tasks_type_profile ON background_tasks(task_type, profile_id)",
             # New composite indexes on existing tables
             "CREATE INDEX IF NOT EXISTS ix_jobs_profile_status_score ON jobs(profile_id, status, match_score)",
             "CREATE INDEX IF NOT EXISTS ix_jobs_created_at ON jobs(created_at)",
@@ -315,6 +341,7 @@ def init_db():
     from backend.models.models import (  # noqa
         Job, Application, Profile, AgentQuestion, Company, User,
         Interview, SavedSearch, FollowUp, Document, Contact, AICache,
+        BackgroundTask,
     )
     Base.metadata.create_all(bind=engine)
     _run_migrations()
