@@ -1337,10 +1337,101 @@ Each skill should be a concise 1-4 word term that recruiters search for."""
 
     return {
         "total_jobs": len(all_jobs),
+        "jobs_analyzed_by_ai": min(len(all_jobs), 20),
+        "data_source": "your_saved_jobs",
         "profile_skills": profile_skills,
         "skill_hits": skill_hits,
         "ai_audit": ai_audit,
     }
+
+
+@router.get("/profiles/{profile_id}/skills-audit-stream")
+async def skills_audit_stream(profile_id: int, db: Session = Depends(get_db)):
+    """Streaming variant of skills audit — returns SSE chunks as AI generates.
+
+    The non-streaming version times out after 60s. Streaming keeps the connection
+    alive with progressive text, eliminating timeouts.
+    """
+    profile = db.query(Profile).filter(Profile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    if get_provider() == "none":
+        raise HTTPException(503, "No AI provider configured")
+
+    all_jobs = db.query(Job).filter(Job.profile_id == profile_id).all()
+    if not all_jobs:
+        raise HTTPException(400, "No jobs found yet — search first")
+
+    profile_skills = safe_json(profile.skills, [])
+
+    # Compute hit rate for each profile skill (fast, no AI needed)
+    skill_hits = {}
+    for skill in profile_skills:
+        count = 0
+        for j in all_jobs:
+            text = f"{j.title or ''} {j.description or ''} {j.requirements or ''}".lower()
+            if skill.lower() in text:
+                count += 1
+        skill_hits[skill] = {"count": count, "pct": round(count / len(all_jobs) * 100, 1)}
+
+    # Build the AI prompt (same as non-streaming)
+    sample_reqs = "\n---\n".join([
+        f"{j.title}: {(j.requirements or '')[:300]}"
+        for j in sorted(all_jobs, key=lambda x: -(x.match_score or 0))[:20]
+    ])
+
+    prompt = f"""Analyze these job posting requirements and extract the most in-demand SKILLS that appear across multiple postings.
+
+CANDIDATE'S CURRENT SKILLS: {json.dumps(profile_skills)}
+
+JOB POSTINGS (top 20 by match score):
+{sample_reqs[:4000]}
+
+Return JSON:
+{{
+    "missing_high_demand": ["skills that appear in 5+ postings but candidate doesn't have - use standard industry terms"],
+    "missing_moderate": ["skills in 2-4 postings the candidate is missing"],
+    "low_value_skills": ["candidate skills that appear in <5% of postings (consider removing)"],
+    "skill_categories": {{
+        "technical": ["technical/tool skills to add"],
+        "frameworks": ["frameworks, standards, certifications to add"],
+        "leadership": ["leadership/management skills to add"],
+        "domain": ["domain/industry expertise to add"]
+    }},
+    "recommended_additions": ["top 5-8 most impactful skills to add to profile, in priority order"],
+    "recommended_removals": ["skills to consider removing (too generic, not in demand, or redundant)"]
+}}
+
+IMPORTANT: Only suggest skills using standard industry terminology (e.g. "NIST CSF" not "security frameworks", "AWS" not "cloud platforms").
+Each skill should be a concise 1-4 word term that recruiters search for."""
+
+    async def event_stream():
+        full_text = ""
+        try:
+            # First send the non-AI data so frontend can render immediately
+            yield f"data: {json.dumps({'meta': {'total_jobs': len(all_jobs), 'profile_skills': profile_skills, 'skill_hits': skill_hits}})}\n\n"
+
+            async for chunk in ai_generate_stream(prompt, max_tokens=1200, model_tier="balanced"):
+                if chunk:
+                    full_text += chunk
+                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+
+            yield f"data: {json.dumps({'done': True, 'full_text': full_text})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Skills audit stream error: {e}", exc_info=True)
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────

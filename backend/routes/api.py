@@ -14,7 +14,7 @@ from backend.auth import get_optional_user
 from backend.services.scraper import _get_source_config, _save_source_config, get_source_health, AVAILABLE_SOURCES
 from backend.services.enrichment import enrich_company, company_dict
 from backend.services.ai import ai_generate_json, get_provider
-from backend.tasks import get_task_status
+from backend.tasks import get_task_status, cancel_task
 
 from backend.routes.profiles import router as profiles_router
 from backend.routes.jobs import router as jobs_router
@@ -37,6 +37,15 @@ router.include_router(intelligence_router)
 async def poll_task_status(task_id: str):
     """Poll a background task for its status and result."""
     task = get_task_status(task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
+    return task
+
+
+@router.post("/tasks/{task_id}/cancel")
+async def cancel_task_endpoint(task_id: str):
+    """Cancel a running background task."""
+    task = cancel_task(task_id)
     if not task:
         raise HTTPException(404, "Task not found")
     return task

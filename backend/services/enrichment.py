@@ -623,13 +623,18 @@ async def analyze_profile(db: Session, profile: Profile) -> Profile:
     if profile.resume_text:
         source_text += "\n\nRESUME:\n" + profile.resume_text[:3000]
 
-    prompt = f"""You are a career analyst. Deeply analyze this candidate profile and extract structured insights that will help match them with the right opportunities.
+    prompt = f"""You are a career analyst. Deeply analyze this candidate profile and extract BOTH structured data fields AND narrative insights. This candidate could be from ANY industry — tech, construction, healthcare, finance, trades, education, government, etc. Do NOT assume IT/software terminology.
 
 PROFILE DOCUMENT:
 {source_text}
 
-Return JSON:
+Return JSON with two sections — hard data fields AND soft narrative fields:
 {{
+    "skills": ["list of 10-25 market-standard skills extracted from the document. Include technical skills, certifications, tools, methodologies, and domain expertise relevant to the candidate's ACTUAL industry. Examples for construction: 'Project Scheduling', 'P6 Primavera', 'LEED Certification', 'Blueprint Reading', 'OSHA Compliance'. Examples for healthcare: 'Patient Care', 'EMR Systems', 'HIPAA Compliance'. Examples for IT: 'Python', 'AWS', 'Kubernetes'. Use terms that would appear in real job postings for this person's field."],
+    "target_roles": ["list of 3-12 job titles this candidate would target, derived from their most recent 2-3 positions. Generate searchable title variations a recruiter would use. For example if they were a 'Construction Project Manager', generate 'Construction Project Manager', 'Senior Project Manager', 'Project Manager - Construction', 'Construction Manager', etc."],
+    "experience_years": <integer total years of professional experience, counted from earliest role to present, or null if cannot determine>,
+    "location": "City, State/Province if mentioned in the document, or null",
+    "seniority_level": "entry|mid|senior|director|vp|c-suite",
     "profile_summary": "3-4 sentence executive summary of who this candidate is, what they bring, and what they're looking for. Write in third person.",
     "career_trajectory": "2-3 sentence narrative of their career arc - where they've been, where they're heading",
     "leadership_style": "1-2 sentences about their management/leadership approach based on experience",
@@ -638,17 +643,20 @@ Return JSON:
     "deal_breakers": ["things they likely wouldn't accept - infer from preferences and seniority"],
     "strengths": ["top 5-7 key differentiators that set them apart"],
     "growth_areas": ["areas they seem interested in developing or moving into"],
-    "ideal_culture": "2-3 sentence description of their ideal work environment",
-    "seniority_level": "entry|mid|senior|director|vp|c-suite"
+    "ideal_culture": "2-3 sentence description of their ideal work environment"
 }}
 
 IMPORTANT:
+- SKILLS: Extract skills relevant to the candidate's ACTUAL industry, not just IT skills. Read every bullet point and job description for domain-specific expertise, tools, certifications, and methodologies.
+- TARGET_ROLES: Derive from actual job titles held, not generic titles. Generate variations a recruiter would search for.
+- EXPERIENCE_YEARS: Calculate from the earliest work date mentioned to today's date.
+- LOCATION: Extract from contact info, header, or address section if present.
 - Base everything on evidence in the document, but read between the lines
 - For values and deal_breakers, infer from their seniority, preferences, and career history
 - Be specific about strengths - not generic qualities but actual differentiators
 - The ideal_culture should reflect what someone at their level and in their field would value"""
 
-    data = await ai_generate_json(prompt, max_tokens=1000, model_tier="deep")
+    data = await ai_generate_json(prompt, max_tokens=2000, model_tier="deep")
     if not data:
         return profile
 
@@ -659,6 +667,62 @@ IMPORTANT:
 
     # Only fill fields that are still None/empty — do not overwrite values
     # already populated by the resume parse pipeline
+
+    # ── Hard fields (skills, target_roles, experience_years, location) ──
+    # Merge AI-extracted skills with any existing skills (dedup, case-insensitive)
+    ai_skills = data.get("skills") or []
+    if ai_skills and isinstance(ai_skills, list):
+        existing_skills = []
+        if profile.skills:
+            try:
+                existing_skills = json.loads(profile.skills) if isinstance(profile.skills, str) else profile.skills
+            except (json.JSONDecodeError, TypeError):
+                existing_skills = []
+        if not existing_skills or existing_skills in ([], [""], [None]):
+            # No existing skills — use AI-extracted skills directly
+            profile.skills = json.dumps([s.strip() for s in ai_skills if isinstance(s, str) and s.strip()][:25])
+        else:
+            # Merge: existing skills take priority, then add new AI skills
+            seen_lower = {s.strip().lower() for s in existing_skills if isinstance(s, str)}
+            merged = list(existing_skills)
+            for skill in ai_skills:
+                if isinstance(skill, str) and skill.strip() and skill.strip().lower() not in seen_lower:
+                    seen_lower.add(skill.strip().lower())
+                    merged.append(skill.strip())
+            profile.skills = json.dumps(merged[:25])
+
+    ai_target_roles = data.get("target_roles") or []
+    if ai_target_roles and isinstance(ai_target_roles, list):
+        existing_roles = []
+        if profile.target_roles:
+            try:
+                existing_roles = json.loads(profile.target_roles) if isinstance(profile.target_roles, str) else profile.target_roles
+            except (json.JSONDecodeError, TypeError):
+                existing_roles = []
+        if not existing_roles or existing_roles in ([], [""], [None]):
+            profile.target_roles = json.dumps([r.strip() for r in ai_target_roles if isinstance(r, str) and r.strip()][:12])
+        else:
+            # Merge: existing roles take priority, then add new AI roles
+            seen_lower = {r.strip().lower() for r in existing_roles if isinstance(r, str)}
+            merged = list(existing_roles)
+            for role in ai_target_roles:
+                if isinstance(role, str) and role.strip() and role.strip().lower() not in seen_lower:
+                    seen_lower.add(role.strip().lower())
+                    merged.append(role.strip())
+            profile.target_roles = json.dumps(merged[:12])
+
+    if not profile.experience_years and data.get("experience_years") is not None:
+        try:
+            profile.experience_years = int(data["experience_years"])
+        except (ValueError, TypeError):
+            pass
+
+    if not profile.location and data.get("location"):
+        loc = clean(data["location"])
+        if loc:
+            profile.location = loc
+
+    # ── Soft / narrative fields ──
     if not profile.profile_summary:
         profile.profile_summary = clean(data.get("profile_summary"))
     if not profile.career_trajectory:

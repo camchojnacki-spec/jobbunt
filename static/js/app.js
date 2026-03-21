@@ -128,6 +128,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return; // Don't load profile until logged in
             }
         } catch(e) {}
+    } else {
+        // R2-13: Explicitly hide login overlay when authenticated
+        const overlay = document.getElementById('login-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+            overlay.setAttribute('aria-hidden', 'true');
+        }
     }
 
     await loadProfile();
@@ -769,10 +776,28 @@ async function searchJobs() {
             } catch (e) { /* ignore */ }
         }, 4000);
 
-        // Poll for task completion
+        // Poll for task completion with safety timeout (5 minutes)
         let taskDone = false;
+        const searchStartTime = Date.now();
+        const SEARCH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
         for (let i = 0; i < 150; i++) {
             await new Promise(r => setTimeout(r, 4000));
+
+            // Safety timeout: if 5 minutes pass, force-finish
+            if (Date.now() - searchStartTime > SEARCH_TIMEOUT_MS) {
+                taskDone = true;
+                // Try to cancel the hung task on the server
+                try { await api(`/tasks/${task_id}/cancel`, { method: 'POST' }); } catch (_) {}
+                // Force refresh from DB
+                await loadSwipeStack();
+                renderBrowseView();
+                const finalCount = state.swipeStack?.length || 0;
+                toast(finalCount > 0
+                    ? `Search timed out but found ${finalCount} jobs`
+                    : 'Search timed out — try again', finalCount > 0 ? 'warning' : 'error');
+                break;
+            }
+
             try {
                 const task = await api(`/tasks/${task_id}`);
                 task404Count = 0; // reset on success
@@ -780,9 +805,18 @@ async function searchJobs() {
                     taskDone = true;
                     const result = task.result || {};
                     toast(`Search complete! ${result.new_jobs || 0} new jobs found`, 'success');
+                    // Show industry-specific source recommendations if available
+                    if (result.recommended_sources && result.recommended_sources.length > 0) {
+                        _showRecommendedSources(result.recommended_sources);
+                    }
                     break;
                 }
                 if (task.status === 'failed') { throw new Error(task.error || 'Search failed'); }
+                if (task.status === 'cancelled') {
+                    taskDone = true;
+                    toast('Search was cancelled', 'warning');
+                    break;
+                }
             } catch (e) {
                 if (e.message && !e.message.includes('404')) { clearInterval(poller); throw e; }
                 task404Count++;
@@ -853,6 +887,33 @@ function _updateSearchBanner(count) {
 function _hideSearchBanner() {
     const banner = document.getElementById('search-progress-banner');
     if (banner) banner.style.display = 'none';
+}
+
+function _showRecommendedSources(sources) {
+    // Display industry-specific job board recommendations after search
+    if (!sources || sources.length === 0) return;
+    const existing = document.getElementById('recommended-sources-banner');
+    if (existing) existing.remove();
+
+    const sourceLinks = sources.map(s =>
+        `<a href="${esc(s.url)}" target="_blank" rel="noopener" style="color:var(--jb-bright);text-decoration:underline">${esc(s.name)}</a>`
+    ).join(', ');
+
+    const banner = document.createElement('div');
+    banner.id = 'recommended-sources-banner';
+    banner.style.cssText = 'background:var(--jb-bg-secondary);border:1px solid var(--jb-border);border-radius:8px;padding:12px 16px;margin:8px 0;font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+    banner.innerHTML = `<span style="color:var(--jb-text-2)">Industry boards for your profile:</span> ${sourceLinks}
+        <button onclick="this.parentElement.remove()" style="margin-left:auto;background:none;border:none;color:var(--jb-text-dim);cursor:pointer;font-size:16px" aria-label="Dismiss">&times;</button>`;
+
+    // Insert after source selector in the profile section
+    const sourceSelector = document.getElementById('source-selector');
+    if (sourceSelector) {
+        sourceSelector.parentNode.insertBefore(banner, sourceSelector.nextSibling);
+    } else {
+        // Fallback: insert at top of jobs view
+        const jobsView = document.getElementById('browse-toolbar');
+        if (jobsView) jobsView.parentNode.insertBefore(banner, jobsView.nextSibling);
+    }
 }
 
 async function rescoreJobs() {
@@ -2875,9 +2936,13 @@ async function checkApplicationEmails() {
         // For now, use the manual approach — open a modal to paste email subjects
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
+        modal.id = 'email-check-modal';
         modal.innerHTML = `
             <div class="modal-content" style="max-width:600px">
-                <h3>📧 Check Application Emails</h3>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                    <h3 style="margin:0">📧 Check Application Emails</h3>
+                    <button onclick="document.getElementById('email-check-modal')?.remove()" style="background:none;border:none;color:var(--text-dim);font-size:22px;cursor:pointer;padding:0 4px">&times;</button>
+                </div>
                 <p style="color:var(--text-dim);font-size:13px;margin-bottom:12px">
                     Paste email subjects and senders to check for application updates.
                     One per line, format: <code>Subject | From</code>
@@ -2890,6 +2955,7 @@ We'd like to schedule an interview | Jane Smith &lt;hr@company.com&gt;" style="w
                 </div>
             </div>`;
         document.body.appendChild(modal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
     } catch(e) {
         toast('Failed: ' + e.message, 'error');
     }
@@ -3153,73 +3219,158 @@ async function runSkillsAudit() {
     btn.textContent = 'Auditing...';
     btn.disabled = true;
     results.style.display = 'block';
-    results.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim)">Analyzing your skills against job market demand...</div>';
+    results.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-dim)">
+        <style>@keyframes audit-dot-pulse2{0%,100%{opacity:.3}50%{opacity:1}}</style>
+        <div style="display:inline-flex;align-items:center;gap:8px">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:audit-dot-pulse2 1.2s ease-in-out infinite"></div>
+            Analyzing your skills against job market demand...
+        </div>
+        <pre id="audit-stream-text-profile" style="white-space:pre-wrap;word-wrap:break-word;font-family:var(--font);font-size:12px;line-height:1.5;color:var(--text-dim);background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;margin-top:12px;text-align:left;display:none"></pre>
+    </div>`;
 
     try {
-        const data = await api(`/profiles/${state.profileId}/skills-audit`);
+        // Use streaming SSE endpoint to avoid timeouts
+        const streamUrl = `${API}/profiles/${state.profileId}/skills-audit-stream`;
+        const response = await fetch(streamUrl);
 
-        if (!data.skill_hits || Object.keys(data.skill_hits).length === 0) {
-            results.innerHTML = '<div class="skills-audit"><p style="color:var(--text-dim)">Search for jobs first to audit your skills against the market.</p></div>';
-            return;
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(errText);
         }
 
-        let html = '<div class="skills-audit">';
+        const streamText = document.getElementById('audit-stream-text-profile');
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+        let meta = null;
 
-        // ── Actionable recommendations FIRST ──
-        if (data.ai_audit) {
-            const ai = data.ai_audit;
-            const hasRecs = ai.recommended_additions?.length || ai.missing_high_demand?.length;
-            const hasRemovals = ai.recommended_removals?.length;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-            if (hasRecs) {
-                html += '<h4 style="color:var(--green)">Add These Skills</h4>';
-                html += '<div class="skill-audit-chips">';
-                for (const skill of [...(ai.missing_high_demand || []), ...(ai.recommended_additions || [])]) {
-                    html += `<button class="skill-audit-chip skill-audit-chip-add" onclick="addSkillFromAudit('${esc(skill).replace(/'/g, "\\'")}', this)">+ ${esc(skill)}</button>`;
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                try {
+                    const payload = JSON.parse(line.slice(6));
+
+                    if (payload.error) {
+                        throw new Error(payload.error);
+                    }
+
+                    if (payload.meta) {
+                        meta = payload.meta;
+                    }
+
+                    if (payload.chunk) {
+                        fullText += payload.chunk;
+                        if (streamText) {
+                            streamText.style.display = 'block';
+                            streamText.textContent = fullText;
+                            streamText.scrollTop = streamText.scrollHeight;
+                        }
+                    }
+
+                    if (payload.done) {
+                        fullText = payload.full_text || fullText;
+                        _renderSkillsAuditProfileTab(results, meta, fullText);
+                    }
+                } catch (parseErr) {
+                    if (parseErr.message && !parseErr.message.includes('JSON')) {
+                        throw parseErr;
+                    }
                 }
-                html += '</div>';
-            }
-
-            if (hasRemovals) {
-                html += '<h4 style="margin-top:12px;color:var(--red)">Consider Removing</h4>';
-                html += '<div class="skill-audit-chips">';
-                for (const skill of ai.recommended_removals) {
-                    html += `<button class="skill-audit-chip skill-audit-chip-remove" onclick="removeSkillFromAudit('${esc(skill).replace(/'/g, "\\'")}', this)">&times; ${esc(skill)}</button>`;
-                }
-                html += '</div>';
             }
         }
-
-        // ── Market demand chart (compact: top 8 visible, rest collapsed) ──
-        const sorted = Object.entries(data.skill_hits).sort((a, b) => b[1].pct - a[1].pct);
-        const VISIBLE_COUNT = 8;
-        const hasMore = sorted.length > VISIBLE_COUNT;
-
-        html += `<h4 style="margin-top:16px;cursor:pointer" onclick="document.getElementById('skill-market-list').style.display=document.getElementById('skill-market-list').style.display==='none'?'block':'none';this.querySelector('.chevron').classList.toggle('rotated')">Your Skills vs. Job Market <span class="chevron" style="display:inline-block;font-size:10px;transition:transform 0.2s">&#9660;</span></h4>`;
-        html += '<div id="skill-market-list">';
-        for (let i = 0; i < sorted.length; i++) {
-            const [skill, info] = sorted[i];
-            const color = info.pct >= 20 ? 'var(--green)' : info.pct >= 5 ? 'var(--accent)' : 'var(--red)';
-            const hidden = i >= VISIBLE_COUNT ? ' style="display:none"' : '';
-            html += `<div class="skill-audit-row skill-market-row"${hidden} data-market-row>
-                <span style="min-width:140px;color:${color}">${esc(skill)}</span>
-                <div class="skill-bar"><div class="skill-bar-fill" style="width:${Math.min(info.pct * 5, 100)}%;background:${color}"></div></div>
-                <span style="min-width:50px;text-align:right;color:var(--text-dim);font-size:12px">${info.pct}%</span>
-            </div>`;
-        }
-        if (hasMore) {
-            html += `<button class="skill-audit-expand" onclick="document.querySelectorAll('[data-market-row]').forEach(r=>r.style.display='');this.remove()">Show all ${sorted.length} skills</button>`;
-        }
-        html += '</div>';
-
-        html += '</div>';
-        results.innerHTML = html;
     } catch (e) {
         results.innerHTML = `<div class="skills-audit"><p style="color:var(--red)">Audit failed: ${esc(e.message)}</p></div>`;
     } finally {
         btn.textContent = 'Audit Skills';
         btn.disabled = false;
     }
+}
+
+function _renderSkillsAuditProfileTab(results, meta, aiText) {
+    if (!meta || !meta.skill_hits || Object.keys(meta.skill_hits).length === 0) {
+        results.innerHTML = '<div class="skills-audit"><p style="color:var(--text-dim)">Search for jobs first to audit your skills against the market.</p></div>';
+        return;
+    }
+
+    // Parse AI audit JSON from streamed text
+    let aiAudit = null;
+    if (aiText) {
+        try {
+            let cleaned = aiText.trim();
+            const fenceMatch = cleaned.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
+            if (fenceMatch) cleaned = fenceMatch[1].trim();
+            else {
+                cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '');
+                cleaned = cleaned.replace(/\n?```\s*$/, '');
+                cleaned = cleaned.trim();
+            }
+            try { aiAudit = JSON.parse(cleaned); } catch {
+                const objMatch = cleaned.match(/(\{[\s\S]*\})/);
+                if (objMatch) aiAudit = JSON.parse(objMatch[1]);
+            }
+        } catch { /* parse failed */ }
+    }
+
+    let html = '<div class="skills-audit">';
+
+    // ── Actionable recommendations FIRST ──
+    if (aiAudit) {
+        const ai = aiAudit;
+        const hasRecs = ai.recommended_additions?.length || ai.missing_high_demand?.length;
+        const hasRemovals = ai.recommended_removals?.length;
+
+        if (hasRecs) {
+            html += '<h4 style="color:var(--green)">Add These Skills</h4>';
+            html += '<div class="skill-audit-chips">';
+            for (const skill of [...(ai.missing_high_demand || []), ...(ai.recommended_additions || [])]) {
+                html += `<button class="skill-audit-chip skill-audit-chip-add" onclick="addSkillFromAudit('${esc(skill).replace(/'/g, "\\'")}', this)">+ ${esc(skill)}</button>`;
+            }
+            html += '</div>';
+        }
+
+        if (hasRemovals) {
+            html += '<h4 style="margin-top:12px;color:var(--red)">Consider Removing</h4>';
+            html += '<div class="skill-audit-chips">';
+            for (const skill of ai.recommended_removals) {
+                html += `<button class="skill-audit-chip skill-audit-chip-remove" onclick="removeSkillFromAudit('${esc(skill).replace(/'/g, "\\'")}', this)">&times; ${esc(skill)}</button>`;
+            }
+            html += '</div>';
+        }
+    }
+
+    // ── Market demand chart (compact: top 8 visible, rest collapsed) ──
+    const sorted = Object.entries(meta.skill_hits).sort((a, b) => b[1].pct - a[1].pct);
+    const VISIBLE_COUNT = 8;
+    const hasMore = sorted.length > VISIBLE_COUNT;
+
+    html += `<h4 style="margin-top:16px;cursor:pointer" onclick="document.getElementById('skill-market-list').style.display=document.getElementById('skill-market-list').style.display==='none'?'block':'none';this.querySelector('.chevron').classList.toggle('rotated')">Your Skills vs. Job Market <span class="chevron" style="display:inline-block;font-size:10px;transition:transform 0.2s">&#9660;</span></h4>`;
+    html += '<div id="skill-market-list">';
+    for (let i = 0; i < sorted.length; i++) {
+        const [skill, info] = sorted[i];
+        const color = info.pct >= 20 ? 'var(--green)' : info.pct >= 5 ? 'var(--accent)' : 'var(--red)';
+        const hidden = i >= VISIBLE_COUNT ? ' style="display:none"' : '';
+        html += `<div class="skill-audit-row skill-market-row"${hidden} data-market-row>
+            <span style="min-width:140px;color:${color}">${esc(skill)}</span>
+            <div class="skill-bar"><div class="skill-bar-fill" style="width:${Math.min(info.pct * 5, 100)}%;background:${color}"></div></div>
+            <span style="min-width:50px;text-align:right;color:var(--text-dim);font-size:12px">${info.pct}%</span>
+        </div>`;
+    }
+    if (hasMore) {
+        html += `<button class="skill-audit-expand" onclick="document.querySelectorAll('[data-market-row]').forEach(r=>r.style.display='');this.remove()">Show all ${sorted.length} skills</button>`;
+    }
+    html += '</div>';
+
+    html += '</div>';
+    results.innerHTML = html;
 }
 
 function addSkillFromAudit(skill, btnEl) {
@@ -4186,7 +4337,7 @@ function showAutoApplyModal(appId, plan) {
 
     overlay.innerHTML = `
         <div class="modal auto-apply-modal">
-            <button class="modal-close" onclick="document.getElementById('auto-apply-overlay').classList.remove('show')">&times;</button>
+            <button class="modal-close" onclick="closeAutoApplyModal()">&times;</button>
             <h2>🚀 Apply: ${esc(plan.platform_name || plan.platform)}</h2>
             <div class="auto-apply-steps">
                 ${plan.steps.map((step, i) => `
@@ -4201,11 +4352,17 @@ function showAutoApplyModal(appId, plan) {
             <div class="auto-apply-actions">
                 <a href="${esc(plan.url)}" target="_blank" class="btn btn-primary">Open Job Page</a>
                 <button class="btn btn-secondary" onclick="copyCoverLetter(${appId})">📋 Copy Cover Letter</button>
-                <button class="btn btn-success" onclick="markSubmitted(${appId});document.getElementById('auto-apply-overlay').classList.remove('show')">✅ Mark Submitted</button>
+                <button class="btn btn-success" onclick="markSubmitted(${appId});closeAutoApplyModal()">✅ Mark Submitted</button>
             </div>
         </div>
     `;
     overlay.classList.add('show');
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeAutoApplyModal(); });
+}
+
+function closeAutoApplyModal() {
+    const overlay = document.getElementById('auto-apply-overlay');
+    if (overlay) { overlay.classList.remove('show'); overlay.remove(); }
 }
 
 // ── Deep Research Trigger ────────────────────────────────────────────────
@@ -4894,17 +5051,26 @@ async function loadSearchAdvisor() {
             throw new Error(errText);
         }
 
-        // Show streaming text area
+        // Show styled loading placeholder during streaming (R2-06: no raw JSON)
         content.innerHTML = `<div class="advisor-stream-container">
-            <style>@keyframes advisor-dot-pulse{0%,100%{opacity:.3}50%{opacity:1}}</style>
-            <div class="advisor-stream-header" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-                <div class="advisor-stream-dot" style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:advisor-dot-pulse 1.2s ease-in-out infinite"></div>
-                <span style="color:var(--text-dim);font-size:13px">Coaching staff is analyzing your search...</span>
+            <style>
+                @keyframes advisor-dot-pulse{0%,100%{opacity:.3}50%{opacity:1}}
+                @keyframes advisor-bar-pulse{0%{background-position:-200% 0}100%{background-position:200% 0}}
+            </style>
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;text-align:center">
+                <div style="display:flex;gap:6px;margin-bottom:20px">
+                    <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:advisor-dot-pulse 1.2s ease-in-out infinite"></div>
+                    <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:advisor-dot-pulse 1.2s ease-in-out 0.3s infinite"></div>
+                    <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:advisor-dot-pulse 1.2s ease-in-out 0.6s infinite"></div>
+                </div>
+                <div style="font-size:15px;font-weight:600;color:var(--jb-text-1);margin-bottom:8px">Analyzing your search strategy...</div>
+                <div style="font-size:13px;color:var(--text-dim)">The coaching staff is reviewing your profile, jobs, and market data</div>
+                <div style="width:200px;height:3px;border-radius:3px;margin-top:20px;background:linear-gradient(90deg,var(--jb-bg-secondary) 0%,var(--accent) 50%,var(--jb-bg-secondary) 100%);background-size:200% 100%;animation:advisor-bar-pulse 2s ease-in-out infinite"></div>
             </div>
-            <pre id="advisor-stream-text" style="white-space:pre-wrap;word-wrap:break-word;font-family:var(--font);font-size:13px;line-height:1.6;color:var(--jb-text-2);background:var(--jb-bg-secondary);border:1px solid var(--jb-border);border-radius:8px;padding:16px;max-height:500px;overflow-y:auto"></pre>
         </div>`;
 
-        const streamText = document.getElementById('advisor-stream-text');
+        // Hidden element — streaming text is accumulated but not displayed
+        let streamTextContent = '';
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -4931,10 +5097,7 @@ async function loadSearchAdvisor() {
 
                     if (payload.chunk) {
                         fullText += payload.chunk;
-                        if (streamText) {
-                            streamText.textContent = fullText;
-                            streamText.scrollTop = streamText.scrollHeight;
-                        }
+                        // R2-06: accumulate text silently, no raw JSON display
                     }
 
                     if (payload.done) {
@@ -5150,8 +5313,17 @@ function renderSearchAdvisor(data) {
             <div class="suggestion-cards">
                 ${a.profile_suggestions.map((s, i) => {
                     const isArray = ['target_roles', 'skills', 'target_locations'].includes(s.field);
-                    const suggestedArr = isArray ? (Array.isArray(s.suggested_value) ? s.suggested_value : [s.suggested_value]) : [];
-                    const currentArr = isArray ? (Array.isArray(s.current_value) ? s.current_value : []) : [];
+                    // R2-07: Parse JSON string arrays (e.g. '["Director","PM"]') into real arrays
+                    const _parseArr = (v) => {
+                        if (Array.isArray(v)) return v;
+                        if (typeof v === 'string') {
+                            try { const p = JSON.parse(v); if (Array.isArray(p)) return p; } catch(e) {}
+                            return v ? [v] : [];
+                        }
+                        return [];
+                    };
+                    const suggestedArr = isArray ? _parseArr(s.suggested_value) : [];
+                    const currentArr = isArray ? _parseArr(s.current_value) : [];
 
                     if (isArray) {
                         // Find items to add (in suggested but not in current)
@@ -5234,7 +5406,7 @@ function renderSearchAdvisor(data) {
     if (a.resume_feedback && a.resume_feedback.length > 0) {
         html += `<div class="insight-card advisor-card">
             <div class="insight-card-title">Resume Feedback</div>
-            ${a.resume_feedback.map(f => `<div class="ai-theme">${esc(f)}</div>`).join('')}
+            ${a.resume_feedback.map(f => `<div class="ai-theme">${renderMarkdown(f)}</div>`).join('')}
         </div>`;
     }
 
@@ -6487,7 +6659,7 @@ async function loadPregameReport(triggerBtn) {
                 const recs = a.ai_audit.recommended_additions || [];
                 html += `<div class="pregame-card" style="background:var(--jb-bg-secondary);border:1px solid var(--jb-border);border-radius:8px;padding:16px">
                     <h4 style="margin:0 0 8px">Batting Practice Summary</h4>
-                    <p style="margin:0;color:var(--jb-text-2)">${a.total_jobs || 0} jobs analyzed &middot; ${(a.profile_skills || []).length} skills on profile</p>
+                    <p style="margin:0;color:var(--jb-text-2)">${a.total_jobs || 0} saved jobs (${a.jobs_analyzed_by_ai || Math.min(a.total_jobs || 0, 20)} AI-analyzed) &middot; ${(a.profile_skills || []).length} skills on profile</p>
                     ${recs.length ? `<p style="margin:8px 0 0;color:var(--jb-text-1)">Top skills to add: ${recs.slice(0, 5).map(esc).join(', ')}</p>` : ''}
                 </div>`;
             }
@@ -6532,43 +6704,132 @@ async function runSkillsAuditIntel() {
     el.innerHTML = '<div class="loading-shimmer" style="height:300px;border-radius:8px"></div>';
 
     try {
-        const data = await api(`/profiles/${state.profileId}/skills-audit`);
-        if (!data.skill_hits || !data.total_jobs) {
-            el.innerHTML = `<div class="empty-state"><h2>Not enough data</h2><p>${esc(data.reason || 'Search for jobs first')}</p></div>`;
-            return;
-        }
-        let html = `<p style="color:var(--jb-text-2)">${data.total_jobs} jobs analyzed &middot; ${(data.profile_skills || []).length} skills on profile</p>`;
-        html += '<h4 style="margin:16px 0 8px">Your Skills &mdash; Market Demand</h4>';
-        const sorted = Object.entries(data.skill_hits).sort((a, b) => b[1].pct - a[1].pct);
-        html += '<div style="display:grid;gap:6px">';
-        for (const [skill, info] of sorted) {
-            html += `<div style="display:grid;grid-template-columns:140px 1fr 50px;align-items:center;gap:8px">
-                <span style="font-size:13px">${esc(skill)}</span>
-                <div style="background:var(--jb-bg-tertiary);border-radius:4px;height:12px;overflow:hidden"><div style="width:${Math.max(info.pct, 3)}%;height:100%;background:${info.pct >= 70 ? 'var(--jb-green,#4caf50)' : info.pct >= 40 ? 'var(--jb-bright)' : info.pct >= 15 ? 'var(--jb-orange,#f5a623)' : 'var(--jb-text-dim)'};border-radius:4px"></div></div>
-                <span style="font-size:12px;color:var(--jb-text-2)">${info.pct}%</span>
-            </div>`;
-        }
-        html += '</div>';
+        // Use streaming SSE endpoint to avoid timeouts
+        const streamUrl = `${API}/profiles/${state.profileId}/skills-audit-stream`;
+        const response = await fetch(streamUrl);
 
-        if (data.ai_audit) {
-            const a = data.ai_audit;
-            if (a.recommended_additions && a.recommended_additions.length) {
-                html += `<h4 style="margin:16px 0 8px">Recommended Skills to Add</h4><div style="display:flex;flex-wrap:wrap;gap:6px">${a.recommended_additions.map(s => `<span class="tag-chip" style="cursor:pointer" onclick="addSkillFromAudit('${esc(s)}',this)">${esc(s)} +</span>`).join('')}</div>`;
-            }
-            if (a.recommended_removals && a.recommended_removals.length) {
-                html += `<h4 style="margin:16px 0 8px">Consider Removing</h4><div style="display:flex;flex-wrap:wrap;gap:6px">${a.recommended_removals.map(s => `<span class="tag-chip">${esc(s)}</span>`).join('')}</div>`;
-            }
-            if (a.missing_high_demand && a.missing_high_demand.length) {
-                html += `<h4 style="margin:16px 0 8px">High-Demand Missing Skills</h4><ul>${a.missing_high_demand.map(s => `<li>${esc(s)}</li>`).join('')}</ul>`;
-            }
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(errText);
         }
 
-        el.innerHTML = html;
+        // Show streaming text area while AI generates
+        el.innerHTML = `<div class="skills-audit-stream-container">
+            <style>@keyframes audit-dot-pulse{0%,100%{opacity:.3}50%{opacity:1}}</style>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:audit-dot-pulse 1.2s ease-in-out infinite"></div>
+                <span style="color:var(--text-dim);font-size:13px">Analyzing skills against job market...</span>
+            </div>
+            <pre id="audit-stream-text" style="white-space:pre-wrap;word-wrap:break-word;font-family:var(--font);font-size:13px;line-height:1.6;color:var(--jb-text-2);background:var(--jb-bg-secondary);border:1px solid var(--jb-border);border-radius:8px;padding:16px;max-height:400px;overflow-y:auto"></pre>
+        </div>`;
+
+        const streamText = document.getElementById('audit-stream-text');
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+        let meta = null;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                try {
+                    const payload = JSON.parse(line.slice(6));
+
+                    if (payload.error) {
+                        throw new Error(payload.error);
+                    }
+
+                    if (payload.meta) {
+                        meta = payload.meta;
+                    }
+
+                    if (payload.chunk) {
+                        fullText += payload.chunk;
+                        if (streamText) {
+                            streamText.textContent = fullText;
+                            streamText.scrollTop = streamText.scrollHeight;
+                        }
+                    }
+
+                    if (payload.done) {
+                        fullText = payload.full_text || fullText;
+                        _renderSkillsAuditResult(el, meta, fullText);
+                    }
+                } catch (parseErr) {
+                    if (parseErr.message && !parseErr.message.includes('JSON')) {
+                        throw parseErr;
+                    }
+                }
+            }
+        }
     } catch (e) {
         el.innerHTML = `<div class="empty-state"><h2>Audit failed</h2><p>${esc(e.message)}</p></div>`;
     } finally {
         setButtonLoading(btn, false);
     }
+}
+
+function _renderSkillsAuditResult(el, meta, aiText) {
+    if (!meta || !meta.skill_hits || !meta.total_jobs) {
+        el.innerHTML = `<div class="empty-state"><h2>Not enough data</h2><p>Search for jobs first</p></div>`;
+        return;
+    }
+
+    let html = `<p style="color:var(--jb-text-2)">${meta.total_jobs} saved jobs (${meta.jobs_analyzed_by_ai || Math.min(meta.total_jobs, 20)} AI-analyzed) &middot; ${(meta.profile_skills || []).length} skills on profile</p>`;
+    html += '<h4 style="margin:16px 0 8px">Your Skills &mdash; Market Demand</h4>';
+    const sorted = Object.entries(meta.skill_hits).sort((a, b) => b[1].pct - a[1].pct);
+    html += '<div style="display:grid;gap:6px">';
+    for (const [skill, info] of sorted) {
+        html += `<div style="display:grid;grid-template-columns:140px 1fr 50px;align-items:center;gap:8px">
+            <span style="font-size:13px">${esc(skill)}</span>
+            <div style="background:var(--jb-bg-tertiary);border-radius:4px;height:12px;overflow:hidden"><div style="width:${Math.max(info.pct, 3)}%;height:100%;background:${info.pct >= 70 ? 'var(--jb-green,#4caf50)' : info.pct >= 40 ? 'var(--jb-bright)' : info.pct >= 15 ? 'var(--jb-orange,#f5a623)' : 'var(--jb-text-dim)'};border-radius:4px"></div></div>
+            <span style="font-size:12px;color:var(--jb-text-2)">${info.pct}%</span>
+        </div>`;
+    }
+    html += '</div>';
+
+    // Parse AI audit JSON from streamed text
+    let aiAudit = null;
+    if (aiText) {
+        try {
+            let cleaned = aiText.trim();
+            const fenceMatch = cleaned.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
+            if (fenceMatch) cleaned = fenceMatch[1].trim();
+            else {
+                cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '');
+                cleaned = cleaned.replace(/\n?```\s*$/, '');
+                cleaned = cleaned.trim();
+            }
+            try { aiAudit = JSON.parse(cleaned); } catch {
+                const objMatch = cleaned.match(/(\{[\s\S]*\})/);
+                if (objMatch) aiAudit = JSON.parse(objMatch[1]);
+            }
+        } catch { /* parse failed, aiAudit stays null */ }
+    }
+
+    if (aiAudit) {
+        const a = aiAudit;
+        if (a.recommended_additions && a.recommended_additions.length) {
+            html += `<h4 style="margin:16px 0 8px">Recommended Skills to Add</h4><div style="display:flex;flex-wrap:wrap;gap:6px">${a.recommended_additions.map(s => `<span class="tag-chip" style="cursor:pointer" onclick="addSkillFromAudit('${esc(s)}',this)">${esc(s)} +</span>`).join('')}</div>`;
+        }
+        if (a.recommended_removals && a.recommended_removals.length) {
+            html += `<h4 style="margin:16px 0 8px">Consider Removing</h4><div style="display:flex;flex-wrap:wrap;gap:6px">${a.recommended_removals.map(s => `<span class="tag-chip">${esc(s)}</span>`).join('')}</div>`;
+        }
+        if (a.missing_high_demand && a.missing_high_demand.length) {
+            html += `<h4 style="margin:16px 0 8px">High-Demand Missing Skills</h4><ul>${a.missing_high_demand.map(s => `<li>${esc(s)}</li>`).join('')}</ul>`;
+        }
+    }
+
+    el.innerHTML = html;
 }
 
 // ── Resume Improver ─────────────────────────────────────────────────────
@@ -7600,6 +7861,7 @@ async function draftFollowUpEmail(id) {
                 </div>
             </div>`;
         document.body.appendChild(modal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
     } catch(e) { toast('Failed: ' + e.message, 'error'); }
 }
 
@@ -7714,6 +7976,7 @@ async function dispatchScout() {
             </div>
         `;
         document.body.appendChild(modal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) closeDispatchModal(); });
     } catch (e) {
         hideActivity();
         toast('Failed to load dispatch config: ' + e.message, 'error');
@@ -7764,110 +8027,6 @@ async function ingestDispatchResults() {
     } catch (e) {
         hideActivity();
         toast('Import failed: ' + e.message, 'error');
-    }
-}
-
-// ── Dugout Chat ──────────────────────────────────────────────────────────
-
-// Session-only chat history (not persisted)
-let dugoutChatHistory = [];
-let dugoutChatBusy = false;
-
-function toggleDugoutChat() {
-    const card = document.getElementById('dugout-chat-card');
-    const body = document.getElementById('dugout-chat-body');
-    if (!card || !body) return;
-    const isOpen = card.classList.contains('open');
-    if (isOpen) {
-        card.classList.remove('open');
-        body.style.display = 'none';
-    } else {
-        card.classList.add('open');
-        body.style.display = 'block';
-        // Focus the input
-        const input = document.getElementById('dugout-chat-input');
-        if (input) setTimeout(() => input.focus(), 100);
-    }
-}
-
-function sendDugoutPrompt(text) {
-    const input = document.getElementById('dugout-chat-input');
-    if (input) input.value = text;
-    sendDugoutChat();
-}
-
-async function sendDugoutChat() {
-    if (dugoutChatBusy) return;
-    const input = document.getElementById('dugout-chat-input');
-    const message = input?.value?.trim();
-    if (!message || !state.profileId) return;
-
-    input.value = '';
-    dugoutChatBusy = true;
-
-    // Add user message
-    dugoutChatHistory.push({ role: 'user', text: message });
-    renderDugoutMessages();
-
-    // Show typing indicator
-    const messagesEl = document.getElementById('dugout-chat-messages');
-    const typingEl = document.createElement('div');
-    typingEl.className = 'dugout-chat-typing';
-    typingEl.id = 'dugout-chat-typing';
-    typingEl.innerHTML = '<span class="dugout-chat-typing-dot"></span><span class="dugout-chat-typing-dot"></span><span class="dugout-chat-typing-dot"></span>';
-    messagesEl.appendChild(typingEl);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-
-    // Disable send button
-    const sendBtn = document.getElementById('dugout-chat-send-btn');
-    if (sendBtn) sendBtn.disabled = true;
-
-    try {
-        const result = await api(`/profiles/${state.profileId}/dugout-chat`, {
-            method: 'POST',
-            body: { message },
-        });
-        dugoutChatHistory.push({ role: 'ai', text: result.response });
-    } catch (e) {
-        dugoutChatHistory.push({ role: 'ai', text: 'Sorry, the manager stepped away for a moment. Try again in a bit.' });
-    }
-
-    // Remove typing indicator and render
-    const typing = document.getElementById('dugout-chat-typing');
-    if (typing) typing.remove();
-    dugoutChatBusy = false;
-    if (sendBtn) sendBtn.disabled = false;
-
-    // Keep only last 5 message pairs (10 messages)
-    if (dugoutChatHistory.length > 10) {
-        dugoutChatHistory = dugoutChatHistory.slice(-10);
-    }
-
-    renderDugoutMessages();
-}
-
-function renderDugoutMessages() {
-    const messagesEl = document.getElementById('dugout-chat-messages');
-    if (!messagesEl) return;
-
-    // Build HTML: welcome + history
-    let html = '';
-    if (dugoutChatHistory.length === 0) {
-        html = '<div class="dugout-chat-welcome"><p>Hey rookie, I\'m your dugout manager. Ask me anything about your job search \u2014 how you\'re doing, what to focus on, or just need a pep talk.</p></div>';
-    }
-
-    for (const msg of dugoutChatHistory) {
-        const escaped = msg.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-        html += `<div class="dugout-chat-bubble ${msg.role}">${escaped}</div>`;
-    }
-
-    messagesEl.innerHTML = html;
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-
-    // Hide quick prompts after first message sent
-    if (dugoutChatHistory.length > 0) {
-        const prompts = document.getElementById('dugout-chat-prompts');
-        if (prompts) prompts.style.display = 'none';
     }
 }
 
@@ -7940,3 +8099,14 @@ async function runDispatch() {
         if (progress) progress.style.display = 'none';
     }
 }
+
+// ── Global Escape Key Handler (safety net for ALL modals) ───────────────
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    // Find the topmost (last) modal-overlay in the DOM and remove it
+    const modals = document.querySelectorAll('.modal-overlay');
+    if (modals.length > 0) {
+        const topModal = modals[modals.length - 1];
+        topModal.remove();
+    }
+});

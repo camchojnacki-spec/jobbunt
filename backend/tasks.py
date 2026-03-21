@@ -4,6 +4,7 @@ Uses an in-memory OrderedDict as a fast cache, with database persistence
 so that task state survives Cloud Run redeployments and multi-instance routing.
 """
 import asyncio
+import inspect
 import json
 import logging
 import uuid
@@ -21,7 +22,7 @@ MAX_COMPLETED = 50
 
 def _prune():
     """Remove oldest completed tasks when we exceed MAX_COMPLETED."""
-    completed = [tid for tid, t in _tasks.items() if t["status"] in ("completed", "failed")]
+    completed = [tid for tid, t in _tasks.items() if t["status"] in ("completed", "failed", "cancelled")]
     while len(completed) > MAX_COMPLETED:
         oldest = completed.pop(0)
         _tasks.pop(oldest, None)
@@ -99,15 +100,25 @@ def run_background(task_type: str, profile_id: int, func, *args, **kwargs) -> st
 
     async def _wrapper():
         try:
-            result = await func(*args, **kwargs)
+            # Inject task_id so background functions can check cancellation
+            # Only inject if the function signature accepts it
+            sig = inspect.signature(func)
+            if "task_id" in sig.parameters:
+                result = await func(*args, task_id=task_id, **kwargs)
+            else:
+                result = await func(*args, **kwargs)
             _tasks[task_id]["result"] = result
-            _tasks[task_id]["status"] = "completed"
+            # Only transition to completed if not already cancelled/failed by timeout
+            if _tasks[task_id]["status"] == "running":
+                _tasks[task_id]["status"] = "completed"
         except Exception as e:
             logger.error(f"Background task {task_id} ({task_type}) failed: {e}", exc_info=True)
-            _tasks[task_id]["error"] = f"{type(e).__name__}: {str(e)[:500]}"
-            _tasks[task_id]["status"] = "failed"
+            if _tasks[task_id]["status"] == "running":
+                _tasks[task_id]["error"] = f"{type(e).__name__}: {str(e)[:500]}"
+                _tasks[task_id]["status"] = "failed"
         finally:
-            _tasks[task_id]["completed_at"] = datetime.utcnow().isoformat()
+            if not _tasks[task_id].get("completed_at"):
+                _tasks[task_id]["completed_at"] = datetime.utcnow().isoformat()
             # Persist final state to DB
             _persist_task(task_id, _tasks[task_id])
             _prune()
@@ -120,14 +131,74 @@ def get_task_status(task_id: str) -> dict | None:
     """Return the task dict for a given task_id.
 
     Checks in-memory cache first, then falls back to database lookup.
+    Auto-fails tasks stuck in 'running' for more than 5 minutes.
     """
     # Fast path: in-memory cache
     cached = _tasks.get(task_id)
     if cached is not None:
-        return cached
+        task = cached
+    else:
+        # Slow path: database fallback (handles cross-instance and post-deploy lookups)
+        task = _load_task_from_db(task_id)
 
-    # Slow path: database fallback (handles cross-instance and post-deploy lookups)
-    return _load_task_from_db(task_id)
+    # Auto-timeout: fail tasks stuck in 'running' for more than 5 minutes
+    if task and task["status"] == "running" and task.get("started_at"):
+        try:
+            started = datetime.fromisoformat(task["started_at"])
+            elapsed = (datetime.utcnow() - started).total_seconds()
+            if elapsed > 300:
+                logger.warning(f"Task {task_id} timed out after {elapsed:.0f}s — auto-failing")
+                task["status"] = "failed"
+                task["error"] = "Task timed out after 5 minutes"
+                task["completed_at"] = datetime.utcnow().isoformat()
+                _persist_task(task_id, task)
+        except (ValueError, TypeError):
+            pass
+
+    return task
+
+
+def cancel_task(task_id: str) -> dict | None:
+    """Cancel a running task. Returns the updated task dict, or None if not found."""
+    task = get_task_status(task_id)
+    if task is None:
+        return None
+
+    if task["status"] != "running":
+        return task  # Already finished, nothing to cancel
+
+    logger.info(f"Cancelling task {task_id}")
+    task["status"] = "cancelled"
+    task["error"] = "Cancelled by user"
+    task["completed_at"] = datetime.utcnow().isoformat()
+    _tasks[task_id] = task
+    _persist_task(task_id, task)
+    return task
+
+
+def is_task_cancelled(task_id: str) -> bool:
+    """Check if a task has been cancelled. Used by background workers to abort early."""
+    task = _tasks.get(task_id)
+    if task and task["status"] == "cancelled":
+        return True
+    # Also check DB in case cancellation happened on another instance
+    try:
+        from backend.database import SessionLocal
+        from backend.models.models import BackgroundTask
+
+        db = SessionLocal()
+        try:
+            row = db.query(BackgroundTask).filter(BackgroundTask.id == task_id).first()
+            if row and row.status == "cancelled":
+                # Sync to in-memory cache
+                if task_id in _tasks:
+                    _tasks[task_id]["status"] = "cancelled"
+                return True
+        finally:
+            db.close()
+    except Exception:
+        pass
+    return False
 
 
 def _load_task_from_db(task_id: str) -> dict | None:
@@ -183,7 +254,10 @@ def find_running_task(task_type: str, profile_id: int) -> str | None:
     # Check in-memory first
     for tid, t in _tasks.items():
         if t["task_type"] == task_type and t["profile_id"] == profile_id and t["status"] == "running":
-            return tid
+            # Check if this task has timed out (get_task_status handles auto-fail)
+            refreshed = get_task_status(tid)
+            if refreshed and refreshed["status"] == "running":
+                return tid
 
     # Fallback: check database for running tasks on other instances
     try:
@@ -198,9 +272,10 @@ def find_running_task(task_type: str, profile_id: int) -> str | None:
                 BackgroundTask.status == "running",
             ).first()
             if row:
-                # Cache it locally
-                _load_task_from_db(row.id)
-                return row.id
+                # Cache it locally, then check timeout via get_task_status
+                refreshed = get_task_status(row.id)
+                if refreshed and refreshed["status"] == "running":
+                    return row.id
             return None
         except Exception as e:
             logger.warning(f"Failed to query running tasks from DB: {e}")

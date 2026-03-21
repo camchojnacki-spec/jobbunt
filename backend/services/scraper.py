@@ -2245,6 +2245,109 @@ Rules:
     return kept_jobs
 
 
+INDUSTRY_SOURCES = {
+    "construction": [
+        {"key": "constructconnect", "name": "ConstructConnect", "url": "https://www.constructconnect.com/careers"},
+        {"key": "buildforce", "name": "BuildForce Canada", "url": "https://www.buildforce.ca/en/find-jobs"},
+    ],
+    "healthcare": [
+        {"key": "healthcarejobsite", "name": "HealthcareJobSite", "url": "https://www.healthcarejobsite.com"},
+    ],
+    "finance": [
+        {"key": "efinancialcareers", "name": "eFinancialCareers", "url": "https://www.efinancialcareers.com"},
+    ],
+    "technology": [
+        {"key": "dice", "name": "Dice", "url": "https://www.dice.com"},
+        {"key": "stackoverflow", "name": "Stack Overflow Jobs", "url": "https://stackoverflow.com/jobs"},
+    ],
+    "cybersecurity": [
+        {"key": "cybersecjobs", "name": "CyberSecJobs", "url": "https://www.cybersecjobs.com"},
+        {"key": "dice", "name": "Dice", "url": "https://www.dice.com"},
+    ],
+    "engineering": [
+        {"key": "engineeringjobs", "name": "EngineeringJobs", "url": "https://www.engineeringjobs.net"},
+    ],
+    "education": [
+        {"key": "higheredjobs", "name": "HigherEdJobs", "url": "https://www.higheredjobs.com"},
+    ],
+    "government": [
+        {"key": "gcjobs", "name": "GC Jobs", "url": "https://emplois.gc.ca"},
+        {"key": "usajobs", "name": "USAJobs", "url": "https://www.usajobs.gov"},
+    ],
+}
+
+# Keywords used to detect industry from profile skills, roles, and preferences
+_INDUSTRY_KEYWORDS = {
+    "construction": ["construction", "building", "civil engineering", "architecture", "trades",
+                      "project management construction", "site supervisor", "general contractor"],
+    "healthcare": ["healthcare", "health care", "nursing", "medical", "clinical", "hospital",
+                    "pharmaceutical", "pharmacy", "physiotherapy", "physician"],
+    "finance": ["finance", "banking", "investment", "accounting", "actuarial", "fintech",
+                "financial analyst", "portfolio", "wealth management", "cpa", "cfa"],
+    "technology": ["software", "developer", "programming", "devops", "full stack",
+                   "frontend", "backend", "cloud computing", "saas", "data science", "machine learning"],
+    "cybersecurity": ["cybersecurity", "cyber security", "information security", "infosec",
+                      "penetration testing", "soc analyst", "security grc", "nist", "ciso"],
+    "engineering": ["mechanical engineer", "electrical engineer", "chemical engineer",
+                    "manufacturing engineer", "process engineer"],
+    "education": ["teacher", "professor", "education", "curriculum", "academic",
+                  "instructional design", "university", "school administrator"],
+    "government": ["public service", "government", "policy analyst", "public administration",
+                   "municipal", "federal government"],
+}
+
+
+def get_industry_recommendations(profile) -> list[dict]:
+    """Suggest industry-relevant job boards based on profile analysis.
+
+    Examines the profile's industry_preference, target_roles, and skills to
+    detect the user's industry and return matching specialty job boards.
+    """
+    from backend.utils import safe_json
+
+    # Build a text blob from profile data to match against
+    parts = []
+    industry_pref = getattr(profile, 'industry_preference', None) or ''
+    if industry_pref:
+        parts.append(industry_pref.lower())
+
+    industry_prefs = safe_json(getattr(profile, 'industry_preferences', None), [])
+    if isinstance(industry_prefs, list):
+        parts.extend([p.lower() for p in industry_prefs])
+
+    roles = safe_json(getattr(profile, 'target_roles', None), [])
+    if isinstance(roles, list):
+        parts.extend([r.lower() for r in roles])
+
+    skills = safe_json(getattr(profile, 'skills', None), [])
+    if isinstance(skills, list):
+        parts.extend([s.lower() for s in skills])
+
+    text_blob = " ".join(parts)
+
+    # Match industries
+    matched_industries = set()
+    for industry, keywords in _INDUSTRY_KEYWORDS.items():
+        if any(kw in text_blob for kw in keywords):
+            matched_industries.add(industry)
+
+    # Collect recommended sources (deduplicated by key)
+    seen_keys = set()
+    recommendations = []
+    for industry in matched_industries:
+        for source in INDUSTRY_SOURCES.get(industry, []):
+            if source["key"] not in seen_keys:
+                seen_keys.add(source["key"])
+                recommendations.append({
+                    "key": source["key"],
+                    "name": source["name"],
+                    "url": source["url"],
+                    "industry": industry,
+                })
+
+    return recommendations
+
+
 async def search_all_sources(profile: Profile, sources: list[str] | None = None, limit_per_source: int = 15) -> dict:
     """Run search across all sources for a given profile.
 
@@ -2398,9 +2501,13 @@ async def search_all_sources(profile: Profile, sources: list[str] | None = None,
     if relevance_filtered > 0:
         logger.info(f"AI relevance filter removed {relevance_filtered} irrelevant jobs")
 
+    # Industry-specific source recommendations
+    recommended_sources = get_industry_recommendations(profile)
+
     return {
         "jobs": all_jobs,
         "relevance_filtered": relevance_filtered,
+        "recommended_sources": recommended_sources,
     }
 
 

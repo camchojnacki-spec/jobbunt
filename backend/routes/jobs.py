@@ -19,7 +19,7 @@ from backend.services.agent import start_application, process_application
 from backend.services.ai import ai_generate, ai_generate_json
 from backend.services.enrichment import enrich_job, analyze_profile
 from backend.services.browser_scraper import build_search_urls, get_extractor, DETAIL_EXTRACTOR, SCROLL_AND_LOAD, PAGINATION_URLS
-from backend.tasks import run_background, find_running_task
+from backend.tasks import run_background, find_running_task, is_task_cancelled
 from backend.utils import safe_json
 from backend.serializers import _job_dict, _application_dict, _job_completeness, _preload_companies
 from backend.routes._helpers import (
@@ -103,7 +103,7 @@ async def search_jobs(
     return {"task_id": task_id, "status": "running"}
 
 
-async def _bg_search_and_score(profile_id: int, sources: list[str] | None):
+async def _bg_search_and_score(profile_id: int, sources: list[str] | None, task_id: str = None):
     """Background worker: scrape, save, rule-score, then kick off enrichment."""
     db = SessionLocal()
     try:
@@ -111,10 +111,19 @@ async def _bg_search_and_score(profile_id: int, sources: list[str] | None):
         if not profile:
             return {"error": "Profile not found"}
 
+        # Check for cancellation before starting scrape
+        if task_id and is_task_cancelled(task_id):
+            return {"error": "Cancelled by user", "new_jobs": 0}
+
         # 1. SCRAPE
         search_result = await search_all_sources(profile, sources=sources)
         raw_jobs = search_result["jobs"]
         relevance_filtered = search_result.get("relevance_filtered", 0)
+        recommended_sources = search_result.get("recommended_sources", [])
+
+        # Check for cancellation after scrape
+        if task_id and is_task_cancelled(task_id):
+            return {"error": "Cancelled by user", "new_jobs": 0}
 
         # 2. DEDUPLICATE & SAVE
         new_jobs = save_scraped_jobs(db, profile_id, raw_jobs)
@@ -130,11 +139,15 @@ async def _bg_search_and_score(profile_id: int, sources: list[str] | None):
                 job.match_breakdown = json.dumps(result["breakdown"])
                 if (idx + 1) % 10 == 0:
                     db.commit()
+                    # Check for cancellation periodically during scoring
+                    if task_id and is_task_cancelled(task_id):
+                        db.commit()
+                        return {"error": "Cancelled by user", "new_jobs": len(new_jobs)}
             except Exception:
                 pass
         db.commit()
 
-        # 4. ENRICH & AI-SCORE (background sub-task)
+        # 4. ENRICH & AI-SCORE (background sub-task — runs independently)
         job_ids = [j.id for j in new_jobs]
         if job_ids:
             asyncio.get_event_loop().create_task(
@@ -146,6 +159,7 @@ async def _bg_search_and_score(profile_id: int, sources: list[str] | None):
             "new_jobs": len(new_jobs),
             "duplicates_skipped": len(raw_jobs) - len(new_jobs),
             "relevance_filtered": relevance_filtered,
+            "recommended_sources": recommended_sources,
         }
     except Exception as e:
         logger.error(f"Background search failed: {e}")
